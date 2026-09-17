@@ -1,0 +1,25 @@
+# Event Portal Schema Notes
+
+This folder includes `event-portal/event-api.json` as a starter Event Portal import contract for the generated micro-integration.
+
+## Generated Event API
+
+```json
+{{ event_portal_model_json }}
+```
+
+## Integration Guidance
+
+- Replace generated placeholder schemas with approved Event Portal JSON or XML schemas before production promotion.
+- Use the schema name below when registering the canonical output event:
+
+{% for binding in event_bindings %}
+- Event: `{{ binding.eventName }}`
+- Topic: `{{ binding.topicName }}`
+- Schema: `{{ binding.schemaName }}`
+- Application: `{{ binding.applicationName }}`
+{% endfor %}
+
+## Validation
+
+The generated transform should be validated against the Event Portal schema in CI. If Event Portal provides a stricter schema than the captured sample, treat Event Portal as the source of truth and update `src/main/resources/transforms`.

@@ -1,0 +1,13 @@
+{
+  "name": "order-events-kafka",
+  "brokers": ["${KAFKA_BOOTSTRAP_SERVERS}"],
+  "topics": [
+    "orders.created",
+    "orders.shipped",
+    "orders.cancelled"
+  ],
+  "consumer_group": "solace-bridge-group",
+  "concurrency": 4,
+  "partition_count": 8,
+  "schema_registry": true
+}

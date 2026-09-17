@@ -1,0 +1,983 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Micro-Integration Factory</title>
+<meta name="description" content="Build, deploy, and govern production-ready micro-integrations on Solace PubSub+. From source to running HA integration.">
+<style>
+/* ── Reset & Base ── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0a0e17;--bg2:#111827;--bg3:#1a2235;--bg4:#243049;
+  --green:#00c895;--green-dim:#00c89540;--green-glow:#00c89520;
+  --blue:#3b82f6;--amber:#f59e0b;--red:#ef4444;--purple:#a855f7;
+  --text:#e2e8f0;--text-dim:#94a3b8;--text-muted:#64748b;
+  --border:#1e293b;--border-light:#334155;
+  --radius:12px;--radius-sm:8px;
+  --font-mono:'SF Mono','Fira Code','JetBrains Mono',Consolas,monospace;
+  --font-sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+}
+html{scroll-behavior:smooth;font-size:16px}
+body{
+  background:var(--bg);color:var(--text);font-family:var(--font-sans);
+  line-height:1.6;min-height:100vh;overflow-x:hidden;
+}
+a{color:var(--green);text-decoration:none;transition:opacity .2s}
+a:hover{opacity:.8}
+
+/* ── Background Grid ── */
+body::before{
+  content:'';position:fixed;inset:0;z-index:-1;
+  background-image:
+    linear-gradient(var(--border)1px,transparent 1px),
+    linear-gradient(90deg,var(--border)1px,transparent 1px);
+  background-size:60px 60px;opacity:.15;
+}
+
+/* ── Container ── */
+.container{max-width:1200px;margin:0 auto;padding:0 24px}
+
+/* ── Navigation ── */
+nav{
+  position:sticky;top:0;z-index:100;
+  background:var(--bg)ee;backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--border);padding:16px 0;
+}
+nav .container{display:flex;align-items:center;justify-content:space-between}
+.nav-brand{display:flex;align-items:center;gap:12px;font-weight:700;font-size:1.1rem}
+.nav-brand svg{width:28px;height:28px}
+.nav-links{display:flex;gap:24px;list-style:none}
+.nav-links a{color:var(--text-dim);font-size:.875rem;font-weight:500;transition:color .2s}
+.nav-links a:hover{color:var(--green);opacity:1}
+@media(max-width:768px){.nav-links{display:none}}
+
+/* ── Hero ── */
+.hero{padding:100px 0 80px;text-align:center;position:relative}
+.hero::after{
+  content:'';position:absolute;top:50%;left:50%;
+  width:600px;height:600px;transform:translate(-50%,-50%);
+  background:radial-gradient(circle,var(--green-glow),transparent 70%);
+  pointer-events:none;
+}
+.hero-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  background:var(--green-dim);color:var(--green);
+  padding:6px 16px;border-radius:20px;font-size:.8rem;font-weight:600;
+  margin-bottom:24px;letter-spacing:.5px;text-transform:uppercase;
+}
+.hero-badge .pulse{
+  width:8px;height:8px;border-radius:50%;background:var(--green);
+  animation:pulse 2s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
+.hero h1{
+  font-family:var(--font-mono);font-size:clamp(2.5rem,6vw,4.5rem);
+  font-weight:800;line-height:1.1;margin-bottom:20px;
+  background:linear-gradient(135deg,#fff 30%,var(--green));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.hero p{font-size:1.2rem;color:var(--text-dim);max-width:640px;margin:0 auto 36px}
+.hero-cta{display:flex;gap:16px;justify-content:center;flex-wrap:wrap}
+.btn{
+  display:inline-flex;align-items:center;gap:8px;padding:12px 28px;
+  border-radius:var(--radius-sm);font-weight:600;font-size:.95rem;
+  transition:all .2s;cursor:pointer;border:none;
+}
+.btn-primary{background:var(--green);color:#000}
+.btn-primary:hover{background:#00dba3;transform:translateY(-1px);box-shadow:0 4px 20px var(--green-dim)}
+.btn-secondary{background:var(--bg3);color:var(--text);border:1px solid var(--border-light)}
+.btn-secondary:hover{background:var(--bg4);border-color:var(--green)}
+
+/* ── Section Layout ── */
+section{padding:80px 0}
+.section-label{
+  font-family:var(--font-mono);font-size:.75rem;color:var(--green);
+  text-transform:uppercase;letter-spacing:2px;margin-bottom:12px;
+}
+.section-title{font-size:2rem;font-weight:700;margin-bottom:12px}
+.section-desc{color:var(--text-dim);max-width:600px;margin-bottom:48px}
+
+/* ── Cards ── */
+.card{
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+  padding:28px;transition:all .3s;
+}
+.card:hover{border-color:var(--green);box-shadow:0 0 30px var(--green-glow)}
+.card-icon{
+  width:48px;height:48px;border-radius:12px;display:flex;align-items:center;justify-content:center;
+  margin-bottom:16px;font-size:1.4rem;
+}
+.card h3{font-size:1.1rem;font-weight:600;margin-bottom:8px}
+.card p{color:var(--text-dim);font-size:.9rem;line-height:1.6}
+
+/* ── What It Builds ── */
+.builds-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:20px}
+.builds-grid .card-icon.green{background:var(--green-dim);color:var(--green)}
+.builds-grid .card-icon.blue{background:#3b82f620;color:var(--blue)}
+.builds-grid .card-icon.purple{background:#a855f720;color:var(--purple)}
+
+/* ── Lifecycle Pipeline ── */
+.pipeline{position:relative}
+.pipeline-track{
+  display:flex;gap:0;overflow-x:auto;padding:20px 0;
+  scrollbar-width:none;-ms-overflow-style:none;
+}
+.pipeline-track::-webkit-scrollbar{display:none}
+.pipeline-stage{
+  flex:0 0 auto;width:140px;display:flex;flex-direction:column;align-items:center;
+  position:relative;cursor:pointer;
+}
+.pipeline-stage::after{
+  content:'';position:absolute;top:24px;left:70px;width:70px;height:2px;
+  background:linear-gradient(90deg,var(--green),var(--green-dim));
+}
+.pipeline-stage:last-child::after{display:none}
+.stage-dot{
+  width:48px;height:48px;border-radius:50%;
+  background:var(--bg3);border:2px solid var(--border-light);
+  display:flex;align-items:center;justify-content:center;
+  font-size:1.1rem;margin-bottom:12px;transition:all .3s;z-index:1;
+}
+.pipeline-stage:hover .stage-dot{
+  border-color:var(--green);background:var(--green-dim);
+  box-shadow:0 0 20px var(--green-dim);
+}
+.stage-name{
+  font-family:var(--font-mono);font-size:.7rem;font-weight:600;
+  text-transform:uppercase;letter-spacing:.5px;color:var(--text-dim);
+  text-align:center;transition:color .3s;
+}
+.pipeline-stage:hover .stage-name{color:var(--green)}
+.stage-detail{
+  display:none;background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--radius);padding:24px;margin-top:24px;
+  max-width:800px;
+}
+.stage-detail.active{display:block}
+.stage-detail h4{color:var(--green);font-family:var(--font-mono);margin-bottom:8px}
+.stage-detail p{color:var(--text-dim);font-size:.9rem}
+.stage-detail .outputs{
+  margin-top:12px;padding-top:12px;border-top:1px solid var(--border);
+}
+.stage-detail .outputs span{
+  display:inline-block;background:var(--bg3);color:var(--text-dim);
+  padding:4px 10px;border-radius:4px;font-size:.75rem;
+  font-family:var(--font-mono);margin:3px;
+}
+
+/* ── Nightly Actions ── */
+.nightly-section{background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.timeline{position:relative;padding-left:32px}
+.timeline::before{
+  content:'';position:absolute;left:11px;top:0;bottom:0;width:2px;
+  background:linear-gradient(180deg,var(--green),var(--green-dim),transparent);
+}
+.tl-item{position:relative;margin-bottom:28px;padding-left:20px}
+.tl-item::before{
+  content:'';position:absolute;left:-25px;top:6px;
+  width:12px;height:12px;border-radius:50%;
+  border:2px solid var(--green);background:var(--bg2);z-index:1;
+}
+.tl-item.success::before{background:var(--green)}
+.tl-item.warning::before{border-color:var(--amber);background:var(--amber)}
+.tl-item.running::before{border-color:var(--blue);background:var(--blue);animation:pulse 1.5s infinite}
+.tl-time{font-family:var(--font-mono);font-size:.75rem;color:var(--text-muted);margin-bottom:4px}
+.tl-title{font-weight:600;font-size:.95rem;margin-bottom:4px}
+.tl-desc{color:var(--text-dim);font-size:.85rem}
+.tl-tags{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.tag{
+  display:inline-flex;align-items:center;gap:4px;padding:3px 10px;
+  border-radius:4px;font-size:.7rem;font-family:var(--font-mono);font-weight:600;
+}
+.tag-green{background:var(--green-dim);color:var(--green)}
+.tag-blue{background:#3b82f620;color:var(--blue)}
+.tag-amber{background:#f59e0b20;color:var(--amber)}
+.tag-red{background:#ef444420;color:var(--red)}
+.tag-purple{background:#a855f720;color:var(--purple)}
+
+/* ── Suggested Actions ── */
+.actions-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:16px}
+.action-card{
+  background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);
+  padding:24px;display:flex;gap:16px;align-items:flex-start;transition:all .3s;
+}
+.action-card:hover{border-color:var(--green);transform:translateY(-2px)}
+.action-priority{
+  flex-shrink:0;width:36px;height:36px;border-radius:8px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:.8rem;font-weight:700;
+}
+.priority-high{background:#ef444420;color:var(--red)}
+.priority-medium{background:#f59e0b20;color:var(--amber)}
+.priority-low{background:#3b82f620;color:var(--blue)}
+.action-content h4{font-size:.95rem;font-weight:600;margin-bottom:4px}
+.action-content p{color:var(--text-dim);font-size:.85rem}
+.action-content .action-meta{
+  margin-top:8px;font-family:var(--font-mono);font-size:.7rem;color:var(--text-muted);
+}
+
+/* ── Event Catalog ── */
+.catalog-table{width:100%;border-collapse:collapse}
+.catalog-table th{
+  font-family:var(--font-mono);font-size:.7rem;text-transform:uppercase;
+  letter-spacing:1px;color:var(--text-muted);text-align:left;
+  padding:12px 16px;border-bottom:1px solid var(--border);
+}
+.catalog-table td{
+  padding:14px 16px;border-bottom:1px solid var(--border);font-size:.9rem;
+}
+.catalog-table tr:hover{background:var(--bg3)}
+.catalog-table .topic{font-family:var(--font-mono);font-size:.8rem;color:var(--green)}
+.catalog-table .schema-name{font-family:var(--font-mono);font-size:.8rem;color:var(--purple)}
+.reuse-badge{
+  display:inline-flex;align-items:center;gap:4px;padding:2px 8px;
+  border-radius:4px;font-size:.7rem;font-weight:600;
+}
+.reuse-shared{background:var(--green-dim);color:var(--green)}
+.reuse-domain{background:#3b82f620;color:var(--blue)}
+.reuse-new{background:var(--bg4);color:var(--text-muted)}
+.catalog-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius);background:var(--bg2)}
+.ep-status{display:flex;align-items:center;gap:6px}
+.ep-dot{width:8px;height:8px;border-radius:50%}
+.ep-dot.synced{background:var(--green)}
+.ep-dot.pending{background:var(--amber)}
+.ep-dot.draft{background:var(--text-muted)}
+
+/* ── Run History ── */
+.runs-section{background:var(--bg2);border-top:1px solid var(--border);border-bottom:1px solid var(--border)}
+.run-cards{display:flex;flex-direction:column;gap:12px}
+.run-card{
+  display:grid;grid-template-columns:auto 1fr auto auto auto;
+  gap:20px;align-items:center;
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:16px 20px;transition:border-color .3s;
+}
+.run-card:hover{border-color:var(--border-light)}
+.run-status{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.run-status.success{background:var(--green)}
+.run-status.failed{background:var(--red)}
+.run-status.running{background:var(--blue);animation:pulse 1.5s infinite}
+.run-info h4{font-size:.9rem;font-weight:600;margin-bottom:2px}
+.run-info p{font-size:.8rem;color:var(--text-dim)}
+.run-target{
+  font-family:var(--font-mono);font-size:.75rem;
+  padding:4px 10px;border-radius:4px;background:var(--bg3);color:var(--text-dim);
+}
+.run-duration{font-family:var(--font-mono);font-size:.8rem;color:var(--text-muted)}
+.run-time{font-family:var(--font-mono);font-size:.75rem;color:var(--text-muted);text-align:right}
+@media(max-width:768px){
+  .run-card{grid-template-columns:auto 1fr auto;gap:12px}
+  .run-target,.run-time{display:none}
+}
+
+/* ── Reference ── */
+.ref-tabs{display:flex;gap:4px;margin-bottom:24px;flex-wrap:wrap}
+.ref-tab{
+  padding:8px 20px;border-radius:var(--radius-sm);cursor:pointer;
+  font-size:.85rem;font-weight:600;color:var(--text-dim);
+  background:var(--bg2);border:1px solid var(--border);transition:all .2s;
+}
+.ref-tab.active{background:var(--green-dim);color:var(--green);border-color:var(--green)}
+.ref-tab:hover:not(.active){border-color:var(--border-light);color:var(--text)}
+.ref-panel{display:none;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:32px}
+.ref-panel.active{display:block}
+.ref-panel h3{font-family:var(--font-mono);color:var(--green);margin:24px 0 12px;font-size:1.05rem}
+.ref-panel h3:first-child{margin-top:0}
+.ref-panel p{color:var(--text-dim);font-size:.9rem;margin-bottom:12px}
+.ref-panel ul{color:var(--text-dim);font-size:.9rem;padding-left:20px;margin-bottom:12px}
+.ref-panel li{margin-bottom:6px}
+.ref-panel code{
+  font-family:var(--font-mono);background:var(--bg);padding:2px 6px;
+  border-radius:4px;font-size:.85rem;color:var(--green);
+}
+.ref-panel pre{
+  background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);
+  padding:16px;overflow-x:auto;margin:12px 0;
+  font-family:var(--font-mono);font-size:.8rem;line-height:1.7;color:var(--text-dim);
+}
+.ref-panel table{width:100%;border-collapse:collapse;margin:12px 0}
+.ref-panel th{
+  font-family:var(--font-mono);font-size:.7rem;text-transform:uppercase;
+  letter-spacing:.5px;color:var(--text-muted);text-align:left;
+  padding:8px 12px;border-bottom:1px solid var(--border);
+}
+.ref-panel td{padding:8px 12px;font-size:.85rem;color:var(--text-dim);border-bottom:1px solid var(--border)}
+.ref-panel td code{font-size:.8rem}
+
+/* ── Stats Bar ── */
+.stats-bar{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+  gap:16px;padding:40px 0;
+}
+.stat{text-align:center}
+.stat-value{
+  font-family:var(--font-mono);font-size:2.5rem;font-weight:800;
+  background:linear-gradient(135deg,var(--green),var(--blue));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  background-clip:text;
+}
+.stat-label{font-size:.8rem;color:var(--text-muted);margin-top:4px}
+
+/* ── Footer ── */
+footer{
+  border-top:1px solid var(--border);padding:40px 0;text-align:center;
+  color:var(--text-muted);font-size:.85rem;
+}
+footer a{color:var(--green)}
+.footer-links{display:flex;gap:24px;justify-content:center;margin-top:16px}
+
+/* ── Utility ── */
+.glow-line{
+  height:1px;
+  background:linear-gradient(90deg,transparent,var(--green),transparent);
+  margin:0 auto;max-width:400px;
+}
+</style>
+</head>
+<body>
+
+<!-- ── Navigation ── -->
+<nav>
+  <div class="container">
+    <div class="nav-brand">
+      <svg viewBox="0 0 28 28" fill="none"><rect width="28" height="28" rx="6" fill="#00c895" fill-opacity=".15"/><path d="M8 14h4l2-4 2 8 2-4h4" stroke="#00c895" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Micro-Integration Factory
+    </div>
+    <ul class="nav-links">
+      <li><a href="#lifecycle">Lifecycle</a></li>
+      <li><a href="#nightly">Nightly Actions</a></li>
+      <li><a href="#actions">Suggested</a></li>
+      <li><a href="#catalog">Event Catalog</a></li>
+      <li><a href="#runs">Run History</a></li>
+      <li><a href="#reference">Reference</a></li>
+      <li><a href="demo.html" class="btn btn-primary" style="padding:6px 16px;font-size:.8rem">Try the Demo</a></li>
+      <li><a href="https://github.com/solacese/agentic-integration-factory" target="_blank">GitHub</a></li>
+    </ul>
+  </div>
+</nav>
+
+<!-- ── Hero ── -->
+<section class="hero">
+  <div class="container">
+    <div class="hero-badge"><span class="pulse"></span> 3 integrations running</div>
+    <h1>Micro-Integration<br>Factory</h1>
+    <p>From source to production. Build, deploy, and govern high-availability micro-integrations on Solace PubSub+ with full Event Portal governance.</p>
+    <div class="hero-cta">
+      <a href="demo.html" class="btn btn-primary">Try the Interactive Demo</a>
+      <a href="#lifecycle" class="btn btn-secondary">See the Lifecycle</a>
+    </div>
+  </div>
+</section>
+
+<!-- ── Stats Bar ── -->
+<div class="container">
+  <div class="stats-bar">
+    <div class="stat"><div class="stat-value">11</div><div class="stat-label">Lifecycle Stages</div></div>
+    <div class="stat"><div class="stat-value">6</div><div class="stat-label">Source Types</div></div>
+    <div class="stat"><div class="stat-value">14</div><div class="stat-label">Events Governed</div></div>
+    <div class="stat"><div class="stat-value">99.97%</div><div class="stat-label">Uptime (30d)</div></div>
+  </div>
+  <div class="glow-line"></div>
+</div>
+
+<!-- ── What It Builds ── -->
+<section id="builds">
+  <div class="container">
+    <div class="section-label">The Output</div>
+    <h2 class="section-title">What the Factory Produces</h2>
+    <p class="section-desc">Every run delivers a production-ready micro-integration with secure deployment, governed events, and operational handoff.</p>
+    <div class="builds-grid">
+      <div class="card">
+        <div class="card-icon green">&#9881;</div>
+        <h3>Running HA Integration</h3>
+        <p>A containerized micro-integration deployed to Kubernetes with 2+ replicas, health probes, rolling updates, PodDisruptionBudget, anti-affinity, and autoscaling. Guaranteed message delivery on Solace PubSub+.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon blue">&#128274;</div>
+        <h3>Secure by Default</h3>
+        <p>Every integration gets its own ACL profile, client profile, and scoped client username. TLS everywhere. Secrets injected via the platform. Deny-by-default publish/subscribe. mTLS and OAuth supported.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon purple">&#128202;</div>
+        <h3>Governed in Event Portal</h3>
+        <p>Full design graph in Solace Event Portal: application domain, application version, schemas, events, topic addresses, and produced-event links. Discoverable and reusable by any team.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Lifecycle Pipeline ── -->
+<section id="lifecycle">
+  <div class="container">
+    <div class="section-label">The Process</div>
+    <h2 class="section-title">11-Stage Lifecycle</h2>
+    <p class="section-desc">From source discovery to production operations. Every stage has security gates, validation checks, and an audit trail.</p>
+    <div class="pipeline">
+      <div class="pipeline-track" id="pipelineTrack">
+        <div class="pipeline-stage" data-stage="0"><div class="stage-dot">&#128273;</div><div class="stage-name">Intake</div></div>
+        <div class="pipeline-stage" data-stage="1"><div class="stage-dot">&#128269;</div><div class="stage-name">Discover</div></div>
+        <div class="pipeline-stage" data-stage="2"><div class="stage-dot">&#128300;</div><div class="stage-name">Model</div></div>
+        <div class="pipeline-stage" data-stage="3"><div class="stage-dot">&#9999;</div><div class="stage-name">Generate</div></div>
+        <div class="pipeline-stage" data-stage="4"><div class="stage-dot">&#9989;</div><div class="stage-name">Validate</div></div>
+        <div class="pipeline-stage" data-stage="5"><div class="stage-dot">&#128230;</div><div class="stage-name">Build</div></div>
+        <div class="pipeline-stage" data-stage="6"><div class="stage-dot">&#128640;</div><div class="stage-name">Deploy</div></div>
+        <div class="pipeline-stage" data-stage="7"><div class="stage-dot">&#128220;</div><div class="stage-name">Govern</div></div>
+        <div class="pipeline-stage" data-stage="8"><div class="stage-dot">&#128504;</div><div class="stage-name">Verify</div></div>
+        <div class="pipeline-stage" data-stage="9"><div class="stage-dot">&#128214;</div><div class="stage-name">Document</div></div>
+        <div class="pipeline-stage" data-stage="10"><div class="stage-dot">&#128308;</div><div class="stage-name">Operate</div></div>
+      </div>
+      <div id="stageDetail" class="stage-detail"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Nightly Actions ── -->
+<section id="nightly" class="nightly-section">
+  <div class="container">
+    <div class="section-label">Last 24 Hours</div>
+    <h2 class="section-title">Nightly Actions</h2>
+    <p class="section-desc">What the factory did while you were away. Every action is audited and traceable.</p>
+    <div class="timeline">
+      <div class="tl-item success">
+        <div class="tl-time">03:42 UTC &middot; Today</div>
+        <div class="tl-title">Schema drift check completed</div>
+        <div class="tl-desc">Scanned 14 governed events against source schemas. No drift detected. Postgres <code>orders</code> table unchanged since last run.</div>
+        <div class="tl-tags"><span class="tag tag-green">PASS</span><span class="tag tag-blue">acmeretail/orders</span></div>
+      </div>
+      <div class="tl-item success">
+        <div class="tl-time">03:15 UTC &middot; Today</div>
+        <div class="tl-title">Event Portal reconciliation &mdash; acme-payments-stripe-ingest</div>
+        <div class="tl-desc">Synced 4 event versions, 4 schema versions, 1 application version. All <code>declaredProducedEventVersionIds</code> linked. Full design graph confirmed in Event Portal Designer.</div>
+        <div class="tl-tags"><span class="tag tag-green">SYNCED</span><span class="tag tag-purple">Event Portal</span><span class="tag tag-blue">4 events</span></div>
+      </div>
+      <div class="tl-item success">
+        <div class="tl-time">02:48 UTC &middot; Today</div>
+        <div class="tl-title">Deployed acme-payments-stripe-ingest v0.3.0 to Kubernetes</div>
+        <div class="tl-desc">Rolling update completed. 2 replicas healthy. Readiness and liveness probes passing. TLS verified. ACL profile <code>stripe-ingest-acl</code> enforcing deny-by-default.</div>
+        <div class="tl-tags"><span class="tag tag-green">DEPLOYED</span><span class="tag tag-blue">K8s: prod-vpn</span><span class="tag tag-green">2 replicas</span></div>
+      </div>
+      <div class="tl-item success">
+        <div class="tl-time">02:30 UTC &middot; Today</div>
+        <div class="tl-title">Validation passed &mdash; acme-payments-stripe-ingest</div>
+        <div class="tl-desc">12 unit tests, 4 contract tests, 1 happy-path publish test. All green. Schema matches Event Portal. No secrets in generated code.</div>
+        <div class="tl-tags"><span class="tag tag-green">17 TESTS PASSED</span><span class="tag tag-green">SECURE</span></div>
+      </div>
+      <div class="tl-item warning">
+        <div class="tl-time">02:10 UTC &middot; Today</div>
+        <div class="tl-title">Source discovery &mdash; Stripe webhook schema change detected</div>
+        <div class="tl-desc">Stripe <code>payment_intent.succeeded</code> added field <code>latest_charge.payment_method_details.card.regulated_status</code>. Additive change &mdash; safe to extend schema version.</div>
+        <div class="tl-tags"><span class="tag tag-amber">SCHEMA CHANGE</span><span class="tag tag-blue">Stripe API</span></div>
+      </div>
+      <div class="tl-item success">
+        <div class="tl-time">01:00 UTC &middot; Today</div>
+        <div class="tl-title">Health check &mdash; all 3 integrations healthy</div>
+        <div class="tl-desc">acme-orders-rest-ingest: 2/2 replicas. acme-inventory-cdc: 2/2 replicas. acme-payments-stripe-ingest: 2/2 replicas. Dead-letter queues empty. Broker connectivity confirmed.</div>
+        <div class="tl-tags"><span class="tag tag-green">ALL HEALTHY</span><span class="tag tag-green">0 DLQ</span></div>
+      </div>
+      <div class="tl-item success">
+        <div class="tl-time">00:15 UTC &middot; Today</div>
+        <div class="tl-title">Connector reuse search completed</div>
+        <div class="tl-desc">Found existing Stripe webhook adapter from run <code>run-2026-03-22-stripe-v1</code>. Reuse score: 92%. Adapted with 3 field mappings for <code>regulated_status</code>.</div>
+        <div class="tl-tags"><span class="tag tag-green">REUSED</span><span class="tag tag-purple">92% match</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Suggested Actions ── -->
+<section id="actions">
+  <div class="container">
+    <div class="section-label">Recommended</div>
+    <h2 class="section-title">Suggested Actions</h2>
+    <p class="section-desc">Prioritized next steps based on source changes, schema drift, and Event Portal governance state.</p>
+    <div class="actions-grid">
+      <div class="action-card">
+        <div class="action-priority priority-high">P1</div>
+        <div class="action-content">
+          <h4>Extend PaymentSucceeded schema to v0.2.0</h4>
+          <p>Stripe added <code>regulated_status</code> to payment_intent.succeeded. Create new schema version (additive), new event version, re-link application version in Event Portal.</p>
+          <div class="action-meta">Source: Stripe API &middot; Domain: acmeretail/payments</div>
+        </div>
+      </div>
+      <div class="action-card">
+        <div class="action-priority priority-medium">P2</div>
+        <div class="action-content">
+          <h4>Onboard Salesforce opportunity events</h4>
+          <p>New source detected: Salesforce Opportunity webhook. Discovery shows 6 event candidates. Recommend running full lifecycle to produce <code>acmeretail/crm/opportunity/created/v1</code>.</p>
+          <div class="action-meta">Source: Salesforce &middot; Domain: acmeretail/crm &middot; ~6 events</div>
+        </div>
+      </div>
+      <div class="action-card">
+        <div class="action-priority priority-medium">P2</div>
+        <div class="action-content">
+          <h4>Rotate broker credentials for acme-orders-rest-ingest</h4>
+          <p>Client password for <code>orders-ingest-user</code> is 87 days old. Rotation policy threshold is 90 days. Schedule password rotation and Kubernetes Secret update.</p>
+          <div class="action-meta">Security &middot; Broker: prod-vpn &middot; Deadline: 3 days</div>
+        </div>
+      </div>
+      <div class="action-card">
+        <div class="action-priority priority-low">P3</div>
+        <div class="action-content">
+          <h4>Promote acme-inventory-cdc event versions to RELEASED</h4>
+          <p>3 event versions and 3 schema versions are still in DRAFT state after 14 days in production. Promote to RELEASED to enforce immutability and unlock consumer discovery.</p>
+          <div class="action-meta">Governance &middot; Event Portal &middot; 6 versions to promote</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Event Catalog ── -->
+<section id="catalog">
+  <div class="container">
+    <div class="section-label">Governed Assets</div>
+    <h2 class="section-title">Event Catalog</h2>
+    <p class="section-desc">All events produced by factory-built integrations. Registered in Solace Event Portal. Reusable by any team.</p>
+    <div class="catalog-wrap">
+      <table class="catalog-table">
+        <thead>
+          <tr>
+            <th>Event</th>
+            <th>Topic</th>
+            <th>Schema</th>
+            <th>Version</th>
+            <th>Reuse</th>
+            <th>Portal</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>OrderCreated</strong></td>
+            <td class="topic">acmeretail/orders/order/created/v1/{region}/{orderId}</td>
+            <td class="schema-name">OrderCreatedPayload</td>
+            <td>0.1.0</td>
+            <td><span class="reuse-badge reuse-shared">Shared</span></td>
+            <td><div class="ep-status"><span class="ep-dot synced"></span> Synced</div></td>
+          </tr>
+          <tr>
+            <td><strong>OrderUpdated</strong></td>
+            <td class="topic">acmeretail/orders/order/updated/v1/{region}/{orderId}</td>
+            <td class="schema-name">OrderUpdatedPayload</td>
+            <td>0.1.0</td>
+            <td><span class="reuse-badge reuse-shared">Shared</span></td>
+            <td><div class="ep-status"><span class="ep-dot synced"></span> Synced</div></td>
+          </tr>
+          <tr>
+            <td><strong>OrderCancelled</strong></td>
+            <td class="topic">acmeretail/orders/order/cancelled/v1/{region}/{orderId}</td>
+            <td class="schema-name">OrderCancelledPayload</td>
+            <td>0.1.0</td>
+            <td><span class="reuse-badge reuse-domain">Domain</span></td>
+            <td><div class="ep-status"><span class="ep-dot synced"></span> Synced</div></td>
+          </tr>
+          <tr>
+            <td><strong>InventoryAdjusted</strong></td>
+            <td class="topic">acmeretail/inventory/item/adjusted/v1/{warehouse}/{sku}</td>
+            <td class="schema-name">InventoryAdjustedPayload</td>
+            <td>0.2.0</td>
+            <td><span class="reuse-badge reuse-shared">Shared</span></td>
+            <td><div class="ep-status"><span class="ep-dot synced"></span> Synced</div></td>
+          </tr>
+          <tr>
+            <td><strong>InventoryLow</strong></td>
+            <td class="topic">acmeretail/inventory/item/low/v1/{warehouse}/{sku}</td>
+            <td class="schema-name">InventoryLowPayload</td>
+            <td>0.1.0</td>
+            <td><span class="reuse-badge reuse-domain">Domain</span></td>
+            <td><div class="ep-status"><span class="ep-dot draft"></span> Draft</div></td>
+          </tr>
+          <tr>
+            <td><strong>InventoryReplenished</strong></td>
+            <td class="topic">acmeretail/inventory/item/replenished/v1/{warehouse}/{sku}</td>
+            <td class="schema-name">InventoryReplenishedPayload</td>
+            <td>0.1.0</td>
+            <td><span class="reuse-badge reuse-new">New</span></td>
+            <td><div class="ep-status"><span class="ep-dot draft"></span> Draft</div></td>
+          </tr>
+          <tr>
+            <td><strong>PaymentSucceeded</strong></td>
+            <td class="topic">acmeretail/payments/payment/succeeded/v1/{currency}/{paymentId}</td>
+            <td class="schema-name">PaymentSucceededPayload</td>
+            <td>0.1.0</td>
+            <td><span class="reuse-badge reuse-shared">Shared</span></td>
+            <td><div class="ep-status"><span class="ep-dot synced"></span> Synced</div></td>
+          </tr>
+          <tr>
+            <td><strong>PaymentFailed</strong></td>
+            <td class="topic">acmeretail/payments/payment/failed/v1/{currency}/{paymentId}</td>
+            <td class="schema-name">PaymentFailedPayload</td>
+            <td>0.1.0</td>
+            <td><span class="reuse-badge reuse-shared">Shared</span></td>
+            <td><div class="ep-status"><span class="ep-dot synced"></span> Synced</div></td>
+          </tr>
+          <tr>
+            <td><strong>PaymentRefunded</strong></td>
+            <td class="topic">acmeretail/payments/payment/refunded/v1/{currency}/{paymentId}</td>
+            <td class="schema-name">PaymentRefundedPayload</td>
+            <td>0.1.0</td>
+            <td><span class="reuse-badge reuse-domain">Domain</span></td>
+            <td><div class="ep-status"><span class="ep-dot synced"></span> Synced</div></td>
+          </tr>
+          <tr>
+            <td><strong>PaymentDisputeOpened</strong></td>
+            <td class="topic">acmeretail/payments/dispute/opened/v1/{currency}/{disputeId}</td>
+            <td class="schema-name">DisputeOpenedPayload</td>
+            <td>0.1.0</td>
+            <td><span class="reuse-badge reuse-new">New</span></td>
+            <td><div class="ep-status"><span class="ep-dot pending"></span> Pending</div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ── Run History ── -->
+<section id="runs" class="runs-section">
+  <div class="container">
+    <div class="section-label">Build History</div>
+    <h2 class="section-title">Run History</h2>
+    <p class="section-desc">Every factory run is audited. Click a run to see the full artifact trail.</p>
+    <div class="run-cards">
+      <div class="run-card">
+        <div class="run-status success"></div>
+        <div class="run-info"><h4>acme-payments-stripe-ingest v0.3.0</h4><p>Full lifecycle &middot; Stripe webhook &rarr; Solace &rarr; K8s &rarr; Event Portal</p></div>
+        <div class="run-target">kubernetes</div>
+        <div class="run-duration">18m 42s</div>
+        <div class="run-time">Today 02:48 UTC</div>
+      </div>
+      <div class="run-card">
+        <div class="run-status success"></div>
+        <div class="run-info"><h4>acme-inventory-cdc v0.2.0</h4><p>Schema extension &middot; Postgres CDC &rarr; Solace &rarr; K8s &rarr; Event Portal</p></div>
+        <div class="run-target">kubernetes</div>
+        <div class="run-duration">22m 15s</div>
+        <div class="run-time">Mar 28 01:30 UTC</div>
+      </div>
+      <div class="run-card">
+        <div class="run-status success"></div>
+        <div class="run-info"><h4>acme-orders-rest-ingest v0.1.0</h4><p>Initial build &middot; OpenAPI &rarr; Solace &rarr; K8s &rarr; Event Portal</p></div>
+        <div class="run-target">kubernetes</div>
+        <div class="run-duration">25m 03s</div>
+        <div class="run-time">Mar 22 03:12 UTC</div>
+      </div>
+      <div class="run-card">
+        <div class="run-status failed"></div>
+        <div class="run-info"><h4>acme-orders-rest-ingest v0.1.0 (attempt 1)</h4><p>Validation failed &middot; Missing <code>eventTimestamp</code> in schema &middot; Rolled back</p></div>
+        <div class="run-target">kubernetes</div>
+        <div class="run-duration">11m 08s</div>
+        <div class="run-time">Mar 22 02:50 UTC</div>
+      </div>
+      <div class="run-card">
+        <div class="run-status success"></div>
+        <div class="run-info"><h4>acme-inventory-cdc v0.1.0</h4><p>Initial build &middot; Postgres CDC &rarr; Solace &rarr; K8s &rarr; Event Portal</p></div>
+        <div class="run-target">kubernetes</div>
+        <div class="run-duration">28m 44s</div>
+        <div class="run-time">Mar 20 04:00 UTC</div>
+      </div>
+      <div class="run-card">
+        <div class="run-status success"></div>
+        <div class="run-info"><h4>acme-orders-rest-ingest (demo)</h4><p>Demo deploy &middot; OpenAPI &rarr; Solace &rarr; EC2 (TTL: 60m)</p></div>
+        <div class="run-target">ec2</div>
+        <div class="run-duration">9m 32s</div>
+        <div class="run-time">Mar 18 14:20 UTC</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ── Full Reference ── -->
+<section id="reference">
+  <div class="container">
+    <div class="section-label">Complete Guide</div>
+    <h2 class="section-title">Reference</h2>
+    <p class="section-desc">The complete Micro-Integration Factory reference. Everything an agent or engineer needs to build, deploy, and govern.</p>
+    <div class="ref-tabs" id="refTabs">
+      <div class="ref-tab active" data-tab="security">Security Model</div>
+      <div class="ref-tab" data-tab="reuse">Event Reuse</div>
+      <div class="ref-tab" data-tab="sources">Supported Sources</div>
+      <div class="ref-tab" data-tab="broker">Broker API</div>
+      <div class="ref-tab" data-tab="portal">Event Portal API</div>
+      <div class="ref-tab" data-tab="topics">Topic Taxonomy</div>
+      <div class="ref-tab" data-tab="decisions">Decision Rules</div>
+    </div>
+
+    <!-- Security -->
+    <div class="ref-panel active" data-panel="security">
+      <h3>Non-Negotiable Rules</h3>
+      <ul>
+        <li><strong>Never log, print, embed, or commit secrets.</strong> Not in generated code, docs, prompts, or browser consoles.</li>
+        <li><strong>Read-only credentials for discovery.</strong> Escalate to write only at deploy time after approval.</li>
+        <li><strong>Encrypt in transit.</strong> All broker connections use <code>tcps://</code> or <code>wss://</code> in production.</li>
+        <li><strong>Inject secrets via the platform.</strong> Kubernetes Secrets, Vault, or secure env vars. Never bake into images.</li>
+        <li><strong>Scope credentials minimally.</strong> Dedicated ACL profile, client profile, and username per integration.</li>
+        <li><strong>Validate TLS certificates.</strong> <code>SSL_VALIDATE_CERTIFICATE=true</code> always.</li>
+      </ul>
+      <h3>Per-Integration Broker Security</h3>
+      <p>Every micro-integration gets three dedicated broker objects:</p>
+      <table>
+        <tr><th>Object</th><th>Purpose</th><th>Key Setting</th></tr>
+        <tr><td><strong>ACL Profile</strong></td><td>Controls publish/subscribe scope</td><td><code>publishTopicDefaultAction: disallow</code></td></tr>
+        <tr><td><strong>Client Profile</strong></td><td>Controls resource limits</td><td>Connection, flow, and subscription limits</td></tr>
+        <tr><td><strong>Client Username</strong></td><td>Binds ACL + profile to identity</td><td>Unique per integration, strong password</td></tr>
+      </table>
+      <h3>Authentication Hierarchy</h3>
+      <table>
+        <tr><th>Priority</th><th>Method</th><th>When</th></tr>
+        <tr><td>1</td><td>Client certificate (mTLS)</td><td>Production, regulated</td></tr>
+        <tr><td>2</td><td>OAuth 2.0 / OIDC</td><td>Cloud-native, centralized identity</td></tr>
+        <tr><td>3</td><td>Username + password over TLS</td><td>Standard deployments</td></tr>
+        <tr><td>4</td><td>Basic auth</td><td>Local development only</td></tr>
+      </table>
+    </div>
+
+    <!-- Event Reuse -->
+    <div class="ref-panel" data-panel="reuse">
+      <h3>Core Principle</h3>
+      <p><strong>Design events for the organization, not for the integration.</strong> A well-designed event is consumable by any future application without changes to the producer.</p>
+      <h3>Search Before Creating</h3>
+      <ul>
+        <li><strong>Event Portal</strong> &mdash; does an event with this business meaning already exist?</li>
+        <li><strong>Schema registry</strong> &mdash; does a schema for this entity exist?</li>
+        <li><strong>Prior runs</strong> &mdash; check <code>RUNS_ROOT</code> for previous integrations in the same domain.</li>
+        <li><strong>Existing connectors</strong> &mdash; check <code>WORKSPACE_ROOT</code> for reusable adapters.</li>
+      </ul>
+      <h3>Reuse Decision Matrix</h3>
+      <table>
+        <tr><th>Situation</th><th>Action</th></tr>
+        <tr><td>Exact event + schema exists, RELEASED</td><td><strong>Consume it.</strong> Add a consumer application version.</td></tr>
+        <tr><td>Event exists, schema needs extension</td><td><strong>New schema version</strong> (additive only), new event version.</td></tr>
+        <tr><td>Similar event in different domain</td><td>Evaluate sharing. Mark <code>shared: true</code> if cross-domain.</td></tr>
+        <tr><td>No matching event</td><td><strong>Create new</strong> following the full registration order.</td></tr>
+      </table>
+      <h3>Schema Evolution</h3>
+      <ul>
+        <li>Always additive. New fields are optional with defaults.</li>
+        <li>Never remove or rename fields &mdash; create a new version.</li>
+        <li>Every schema includes: <code>eventId</code>, <code>eventTimestamp</code>, <code>source</code>, <code>correlationId</code>.</li>
+        <li>Use JSON Schema <code>draft-07</code> or later.</li>
+      </ul>
+    </div>
+
+    <!-- Supported Sources -->
+    <div class="ref-panel" data-panel="sources">
+      <h3>Source-Agnostic Design</h3>
+      <p>The factory is source-agnostic. The lifecycle is the same regardless of the input.</p>
+      <table>
+        <tr><th>Source</th><th>Discovery</th><th>Connector Pattern</th></tr>
+        <tr><td><strong>OpenAPI / REST</strong></td><td>Paths, operations, schemas, auth</td><td>HTTP ingress, polling, or webhook</td></tr>
+        <tr><td><strong>Database</strong></td><td>Tables, FKs, timestamps, CDC capability</td><td>CDC (preferred), polling, outbox</td></tr>
+        <tr><td><strong>Webhook / SaaS</strong></td><td>Event catalog, signatures, retries</td><td>HTTP receiver, HMAC verification</td></tr>
+        <tr><td><strong>Message Queue</strong></td><td>Topics, formats, consumer groups</td><td>Consumer bridge to Solace</td></tr>
+        <tr><td><strong>File / Object Store</strong></td><td>Patterns, schemas, arrival frequency</td><td>File watcher, record extraction</td></tr>
+        <tr><td><strong>Custom / Existing</strong></td><td>Source code, config, tests, quality</td><td>Reuse, adapt, or replace</td></tr>
+      </table>
+      <h3>Supported Databases</h3>
+      <p>Any JDBC-compatible database: PostgreSQL, MySQL, Oracle, Microsoft SQL Server, and more. CDC strategy is inferred from the database capabilities (logical replication, binlog, LogMiner, Change Tracking).</p>
+    </div>
+
+    <!-- Broker API -->
+    <div class="ref-panel" data-panel="broker">
+      <h3>SEMP v2 REST API</h3>
+      <p>Management API for queues, subscriptions, ACLs, and client profiles.</p>
+      <pre>Base URL: https://{broker}:{port}/SEMP/v2/config/
+Auth:     Basic (admin:password)
+Methods:  GET, POST, PUT, PATCH, DELETE</pre>
+      <h3>Key Endpoints</h3>
+      <table>
+        <tr><th>Resource</th><th>Path</th></tr>
+        <tr><td>Queues</td><td><code>/msgVpns/{vpn}/queues</code></td></tr>
+        <tr><td>Subscriptions</td><td><code>/msgVpns/{vpn}/queues/{q}/subscriptions</code></td></tr>
+        <tr><td>ACL Profiles</td><td><code>/msgVpns/{vpn}/aclProfiles</code></td></tr>
+        <tr><td>Client Profiles</td><td><code>/msgVpns/{vpn}/clientProfiles</code></td></tr>
+        <tr><td>Client Usernames</td><td><code>/msgVpns/{vpn}/clientUsernames</code></td></tr>
+        <tr><td>Health (Monitor)</td><td><code>/SEMP/v2/monitor/about</code></td></tr>
+      </table>
+      <h3>REST Messaging</h3>
+      <pre>Publish:  POST https://{broker}:9443/TOPIC/{topic-string}
+Headers:  Solace-Delivery-Mode: Persistent
+          Solace-Correlation-ID: {id}
+          Content-Type: application/json</pre>
+      <h3>JCSMP Connection</h3>
+      <pre>Host:       tcps://broker:55443   (TLS)
+VPN:        message-vpn-name
+Reconnect:  20 retries, 3s wait
+ACK window: 50 messages</pre>
+    </div>
+
+    <!-- Event Portal API -->
+    <div class="ref-panel" data-panel="portal">
+      <h3>Event Portal v2 API</h3>
+      <pre>Base URL: https://api.solace.cloud/api/v2/architecture
+Auth:     Bearer {EVENT_PORTAL_TOKEN}
+Content:  application/json;charset=UTF-8</pre>
+      <h3>8-Step Registration Order</h3>
+      <table>
+        <tr><th>#</th><th>Artifact</th><th>Endpoint</th><th>Key Fields</th></tr>
+        <tr><td>1</td><td>Application Domain</td><td><code>POST /applicationDomains</code></td><td><code>name</code></td></tr>
+        <tr><td>2</td><td>Application</td><td><code>POST /applications</code></td><td><code>name, domainId, brokerType: "solace"</code></td></tr>
+        <tr><td>3</td><td>Application Version</td><td><code>POST /applicationVersions</code></td><td><code>applicationId, version</code></td></tr>
+        <tr><td>4</td><td>Schema</td><td><code>POST /schemas</code></td><td><code>name, domainId, schemaType: "jsonSchema"</code></td></tr>
+        <tr><td>5</td><td>Schema Version</td><td><code>POST /schemaVersions</code></td><td><code>schemaId, version, content</code> (real schema)</td></tr>
+        <tr><td>6</td><td>Event</td><td><code>POST /events</code></td><td><code>name, domainId</code></td></tr>
+        <tr><td>7</td><td>Event Version</td><td><code>POST /eventVersions</code></td><td><code>eventId, version, schemaVersionId, deliveryDescriptor</code></td></tr>
+        <tr><td>8</td><td>Link App Version</td><td><code>PATCH /applicationVersions/{id}</code></td><td><code>declaredProducedEventVersionIds: [...]</code></td></tr>
+      </table>
+      <p>Step 8 is what makes the application show events in Event Portal Designer. Without it, the application appears empty.</p>
+      <h3>Version States</h3>
+      <table>
+        <tr><th>State</th><th>ID</th><th>Editable</th><th>Transitions To</th></tr>
+        <tr><td>DRAFT</td><td><code>"1"</code></td><td>Yes</td><td>RELEASED</td></tr>
+        <tr><td>RELEASED</td><td><code>"2"</code></td><td>No (immutable)</td><td>DEPRECATED</td></tr>
+        <tr><td>DEPRECATED</td><td><code>"3"</code></td><td>No</td><td>RETIRED</td></tr>
+        <tr><td>RETIRED</td><td><code>"4"</code></td><td>No</td><td>(terminal)</td></tr>
+      </table>
+    </div>
+
+    <!-- Topic Taxonomy -->
+    <div class="ref-panel" data-panel="topics">
+      <h3>Standard Format</h3>
+      <pre>{domain}/{noun}/{entity}/{verb}/{version}/{key1}/{key2}/...</pre>
+      <h3>Examples</h3>
+      <pre>acmeretail/orders/order/created/v1/us-east/ORD-12345
+logistics/shipments/shipment/dispatched/v1/us-east/SHP-001
+payments/invoices/invoice/paid/v1/us-east/INV-999</pre>
+      <h3>Wildcard Subscriptions</h3>
+      <table>
+        <tr><th>Pattern</th><th>Matches</th></tr>
+        <tr><td><code>*</code></td><td>Exactly one topic level</td></tr>
+        <tr><td><code>&gt;</code></td><td>One or more remaining levels (must be last)</td></tr>
+        <tr><td><code>acmeretail/orders/order/*/v1/&gt;</code></td><td>All v1 order events, any action/region/ID</td></tr>
+        <tr><td><code>acmeretail/orders/&gt;</code></td><td>All order-related events</td></tr>
+      </table>
+      <h3>Anti-Patterns</h3>
+      <ul>
+        <li>Do NOT put environment names in topics &mdash; use separate VPNs</li>
+        <li>Do NOT embed trace IDs &mdash; use <code>Solace-Correlation-ID</code> header</li>
+        <li>Do NOT use special characters (<code># _ * &gt; !</code> spaces)</li>
+        <li>Do NOT put high-cardinality keys first &mdash; put them last</li>
+      </ul>
+    </div>
+
+    <!-- Decision Rules -->
+    <div class="ref-panel" data-panel="decisions">
+      <h3>Default Decision Rules</h3>
+      <table>
+        <tr><th>Decision</th><th>Default</th><th>Override When</th></tr>
+        <tr><td>Code generation vs AI</td><td><strong>Deterministic first</strong></td><td>AI only after baseline passes tests</td></tr>
+        <tr><td>New event vs reuse</td><td><strong>Reuse existing</strong></td><td>No matching event in Event Portal</td></tr>
+        <tr><td>New connector vs reuse</td><td><strong>Reuse existing</strong></td><td>Adaptation cost &gt; 50% of new build</td></tr>
+        <tr><td>Deployment target</td><td><strong>Kubernetes (HA)</strong></td><td>EC2 for demos, local for dev</td></tr>
+        <tr><td>Schema format</td><td><strong>JSON Schema draft-07</strong></td><td>Avro/Protobuf when consumers require it</td></tr>
+        <tr><td>Schema evolution</td><td><strong>Additive only</strong></td><td>Breaking change = new version + new topic</td></tr>
+        <tr><td>Message delivery</td><td><strong>Persistent (guaranteed)</strong></td><td>Direct only for ephemeral data</td></tr>
+        <tr><td>Version baseline</td><td><strong><code>0.1.0</code></strong></td><td>User specifies otherwise</td></tr>
+        <tr><td>Lifecycle completeness</td><td><strong>All 11 stages</strong></td><td>User explicitly scopes a partial run</td></tr>
+      </table>
+      <h3>Acceptance Standard</h3>
+      <p>A run is only complete when:</p>
+      <ul>
+        <li>Source understood &mdash; discovery report with entities and risks</li>
+        <li>Events designed for reuse &mdash; schemas with metadata, versioned, registered</li>
+        <li>Integration generated &mdash; compilable project with tests and Dockerfile</li>
+        <li>Tests passed &mdash; unit, contract, and happy-path publish</li>
+        <li>Deployment live &mdash; health check passing, image tag recorded</li>
+        <li>Events flowing &mdash; message on Solace topic with correlation ID</li>
+        <li>Event Portal complete &mdash; full design graph linked</li>
+        <li>Security hardened &mdash; dedicated ACL, TLS, no embedded secrets</li>
+        <li>Documentation written &mdash; operator runbook, event catalog, consumer guide</li>
+        <li>Operations handoff &mdash; monitoring, alerting, dead-letter, maintenance plan</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ── Footer ── -->
+<footer>
+  <div class="container">
+    <p>Micro-Integration Factory &mdash; Build production-ready integrations on <a href="https://solace.com" target="_blank">Solace PubSub+</a></p>
+    <div class="footer-links">
+      <a href="https://github.com/solacese/agentic-integration-factory" target="_blank">GitHub</a>
+      <a href="https://docs.solace.com" target="_blank">Solace Docs</a>
+      <a href="https://solace.com/products/portal/" target="_blank">Event Portal</a>
+    </div>
+  </div>
+</footer>
+
+<script>
+// ── Pipeline Stage Data ──
+const stages = [
+  { name:'Intake & Secret Binding', icon:'&#128273;',
+    desc:'Bind all credentials server-side. Create an isolated workspace. Verify discovery credentials are read-only.',
+    outputs:['run record','isolated workspace','bound secret set'] },
+  { name:'Source Discovery', icon:'&#128269;',
+    desc:'Inspect the source without mutation. OpenAPI: parse operations, schemas, auth. Database: tables, FKs, timestamps, CDC capability. Search for reusable connectors before generating new.',
+    outputs:['discovery report','reuse candidates','risk notes','proposed events'] },
+  { name:'Canonical Modeling', icon:'&#128300;',
+    desc:'Derive canonical business entities and the event model. Name events as past-tense business facts. Define topic taxonomy, JSON Schemas with metadata fields, and version baselines.',
+    outputs:['canonical model','topic list','schema list','application name'] },
+  { name:'Generation', icon:'&#9999;',
+    desc:'Generate or adapt the micro-integration using the Solace Micro-Integration SDK. Render source adapters, mapping logic, Solace publishing, health endpoints, Dockerfile, deployment manifests, and tests.',
+    outputs:['integration project','test fixtures','generated docs'] },
+  { name:'Validation', icon:'&#9989;',
+    desc:'Compile, run unit/contract/publish tests. Verify schemas match the canonical model. Verify no secrets in generated code. Fail closed on any issue.',
+    outputs:['validation report','accepted revision','input fixtures'] },
+  { name:'Build & Package', icon:'&#128230;',
+    desc:'Build the container image, push to the registry, persist image tag and digest. Emit Helm values, rollback coordinates, and deployment metadata.',
+    outputs:['registry image','build log','deployment metadata'] },
+  { name:'Deploy & Harden', icon:'&#128640;',
+    desc:'Security gate: write credentials used here. Provision broker objects (queue, ACL, client profile). Deploy to Kubernetes (HA) or EC2 (demo). 2+ replicas, probes, PDB, anti-affinity, autoscaling.',
+    outputs:['runtime URL','rollout evidence','broker objects'] },
+  { name:'Govern in Event Portal', icon:'&#128220;',
+    desc:'Register the full design graph: domain \u2192 application \u2192 app version \u2192 schema \u2192 schema version \u2192 event \u2192 event version \u2192 link produced events. This is what makes the app visible in Designer.',
+    outputs:['EP sync report','external IDs','linked design graph'] },
+  { name:'Live Verification', icon:'&#128504;',
+    desc:'Send a test payload through the integration. Verify the message arrives on the expected Solace topic. Verify schema compliance and correlation ID propagation.',
+    outputs:['verification record','correlation IDs'] },
+  { name:'Document & Hand Off', icon:'&#128214;',
+    desc:'Produce discovery summary, design summary, operator runbook, event catalog for consumers, operational notes, and full audit trail. Persist under RUNS_ROOT.',
+    outputs:['operator runbook','event catalog','consumer guide','audit trail'] },
+  { name:'Operate Continuously', icon:'&#128308;',
+    desc:'Monitor health, metrics, retries, dead-letter depth, and schema drift. Schedule periodic re-discovery. Propose safe updates when source schemas evolve.',
+    outputs:['operational handoff','maintenance plan','drift alerts'] }
+];
+
+// ── Pipeline Interaction ──
+const track = document.getElementById('pipelineTrack');
+const detail = document.getElementById('stageDetail');
+
+track.addEventListener('click', e => {
+  const stage = e.target.closest('.pipeline-stage');
+  if (!stage) return;
+  const idx = parseInt(stage.dataset.stage);
+  const s = stages[idx];
+  detail.innerHTML = `
+    <h4>Stage ${idx+1}: ${s.name}</h4>
+    <p>${s.desc}</p>
+    <div class="outputs">${s.outputs.map(o=>`<span>${o}</span>`).join('')}</div>
+  `;
+  detail.classList.add('active');
+  // Highlight active
+  track.querySelectorAll('.pipeline-stage').forEach(el => el.querySelector('.stage-dot').style.borderColor = '');
+  stage.querySelector('.stage-dot').style.borderColor = 'var(--green)';
+  stage.querySelector('.stage-dot').style.background = 'var(--green-dim)';
+});
+
+// Show first stage on load
+track.querySelector('[data-stage="0"]').click();
+
+// ── Reference Tabs ──
+const tabsContainer = document.getElementById('refTabs');
+tabsContainer.addEventListener('click', e => {
+  const tab = e.target.closest('.ref-tab');
+  if (!tab) return;
+  const target = tab.dataset.tab;
+  document.querySelectorAll('.ref-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.ref-panel').forEach(p => p.classList.remove('active'));
+  tab.classList.add('active');
+  document.querySelector(`[data-panel="${target}"]`).classList.add('active');
+});
+</script>
+</body>
+</html>

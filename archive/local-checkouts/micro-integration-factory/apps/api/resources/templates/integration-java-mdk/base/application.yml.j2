@@ -1,0 +1,118 @@
+# ----------------------------------------------------
+# INTERNAL CONNECTOR CONFIGURATION
+# Based on Solace MDK micro-integration-build-parent
+# ----------------------------------------------------
+
+server:
+  port: 8080
+
+spring:
+  cloud:
+    config:
+      import-check:
+        enabled: false
+
+    stream:
+      # [INTERNAL] Pre-create input bindings
+      input-bindings: "\
+{% for i in range(20) %}
+        input-{{ i }}{% if not loop.last %};{% endif %}\
+{% endfor %}
+"
+
+      # [INTERNAL] Pre-create output bindings
+      output-bindings: "\
+{% for i in range(20) %}
+        output-{{ i }}{% if not loop.last %};{% endif %}\
+{% endfor %}
+"
+
+      default-binder: solace
+
+      # Default Binding Configuration
+      default:
+        consumer:
+          # [INTERNAL] Auto-startup must always be disabled
+          auto-startup: false
+          retryable-exceptions.java.lang.InterruptedException: false
+          # [INTERNAL] Skips Spring's payload conversion
+          use-native-decoding: true
+          # [INTERNAL] Prevents issue where mutated nested objects were persisted between local msg retries
+          max-attempts: 1
+        producer:
+          # [INTERNAL] Auto-startup must always be disabled
+          auto-startup: false
+          # [INTERNAL] Producer error channels must always be enabled
+          error-channel-enabled: true
+          # [INTERNAL] Skips Spring's payload conversion
+          use-native-encoding: true
+
+      # Assign consumer groups
+      bindings:
+{% for i in range(20) %}
+        input-{{ i }}:
+          group: group-{{ i }}
+{% endfor %}
+
+      solace:
+        default:
+          consumer:
+            add-destination-as-subscription-to-queue: false
+            batch-wait-strategy: immediate
+            provision-durable-queue: false
+            provision-error-queue: false
+            queue-name-expression: "destination"
+          producer:
+            header-exclusions:
+              - id
+            provision-durable-queue: false
+
+solace:
+  java:
+    host: ${SOLACE_BROKER_URL:}
+    msgVpn: ${SOLACE_VPN:}
+    clientUsername: ${SOLACE_USERNAME:}
+    clientPassword: ${SOLACE_PASSWORD:}
+    api-properties:
+      pub_ack_window_size: 255
+  connector:
+    management:
+      session:
+        reconnect-retries: -1
+
+    workflows:
+      # [INTERNAL] Link/Route workflow to consumer/producer bindings
+{% for i in range(20) %}
+      {{ i }}:
+        input-bindings:
+          - input-{{ i }}
+        output-bindings:
+          - output-{{ i }}
+{% endfor %}
+
+logging:
+  level:
+    root: INFO
+
+management:
+  defaults:
+    metrics:
+      export:
+        enabled: false
+  datadog:
+    metrics:
+      export:
+        enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: "health,metrics,loggers,logfile,channels,env,workflows,leaderelection,bindings,info"
+  endpoint:
+    health:
+      status:
+        order:
+          - DOWN
+          - OUT_OF_SERVICE
+          - RECONNECTING
+          - UP
+          - UNKNOWN

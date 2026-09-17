@@ -1,0 +1,36 @@
+{
+  "name": "payment-webhooks",
+  "signature_verification": true,
+  "signature_header": "X-Webhook-Signature",
+  "endpoints": [
+    {
+      "name": "payment-completed",
+      "path": "/webhooks/payment/completed",
+      "example_payload": {
+        "event": "payment.completed",
+        "payment_id": "pay_123",
+        "amount": 9999,
+        "currency": "usd"
+      }
+    },
+    {
+      "name": "payment-failed",
+      "path": "/webhooks/payment/failed",
+      "example_payload": {
+        "event": "payment.failed",
+        "payment_id": "pay_456",
+        "error_code": "insufficient_funds"
+      }
+    },
+    {
+      "name": "refund-issued",
+      "path": "/webhooks/refund/issued",
+      "example_payload": {
+        "event": "refund.issued",
+        "refund_id": "ref_789",
+        "payment_id": "pay_123",
+        "amount": 5000
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ service_name }}-integration
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ service_name }}-integration
+  template:
+    metadata:
+      labels:
+        app: {{ service_name }}-integration
+    spec:
+      containers:
+        - name: {{ service_name }}-integration
+          image: "{{ "{{" }} .Values.image.repository {{ "}}" }}:{{ "{{" }} .Values.image.tag {{ "}}" }}"
+          imagePullPolicy: {{ "{{" }} .Values.image.pullPolicy {{ "}}" }}
+          ports:
+            - containerPort: 8080
+          env:
+{% for entry in runtime_env_entries %}
+            - name: {{ entry.name }}
+              value: {{ "{{" }} .Values.env.{{ entry.name }} | quote {{ "}}" }}
+{% endfor %}

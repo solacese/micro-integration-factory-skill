@@ -1,0 +1,12 @@
+{% if jolt_spec is defined and jolt_spec %}
+{{ jolt_spec }}
+{% else %}
+[
+  {
+    "operation": "shift",
+    "spec": {
+      "*": "&"
+    }
+  }
+]
+{% endif %}

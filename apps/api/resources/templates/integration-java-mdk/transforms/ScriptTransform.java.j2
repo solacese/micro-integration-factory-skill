@@ -1,0 +1,56 @@
+package com.spec2event.generated.transform;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.stereotype.Component;
+
+import jakarta.annotation.PostConstruct;
+import javax.script.ScriptEngine;
+import javax.script.ScriptEngineManager;
+import java.util.function.Function;
+
+/**
+ * Script-based transform for the {{ title }} micro-integration.
+ *
+ * Loads and executes a script (JavaScript/Groovy/SpEL) from the classpath
+ * against each message payload.
+ *
+ * Language: {{ script_language | default("javascript") }}
+ */
+@Component("messageTransform")
+public class ScriptTransform implements Function<JsonNode, JsonNode> {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ScriptEngineManager engineManager = new ScriptEngineManager();
+    private String scriptContent;
+    private String language;
+
+    @PostConstruct
+    public void init() throws Exception {
+        this.language = "{{ script_language | default('javascript') }}";
+        this.scriptContent = new String(
+            new ClassPathResource("transforms/transform-script.js").getInputStream().readAllBytes()
+        );
+    }
+
+    @Override
+    public JsonNode apply(JsonNode input) {
+        try {
+            ScriptEngine engine = engineManager.getEngineByName(language);
+            if (engine == null) {
+                throw new IllegalStateException("Script engine not found: " + language);
+            }
+            String inputJson = objectMapper.writeValueAsString(input);
+            engine.put("input", inputJson);
+            engine.put("payload", input);
+            Object result = engine.eval(scriptContent);
+            if (result instanceof String) {
+                return objectMapper.readTree((String) result);
+            }
+            return input;
+        } catch (Exception e) {
+            throw new RuntimeException("Script transform failed", e);
+        }
+    }
+}

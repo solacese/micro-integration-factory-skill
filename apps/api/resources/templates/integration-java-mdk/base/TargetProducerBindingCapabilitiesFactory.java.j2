@@ -1,0 +1,43 @@
+package com.spec2event.generated.binding;
+
+import com.solace.connector.core.io.provider.ProducerBindingCapabilities;
+import com.solace.connector.core.io.provider.ProducerBindingCapabilitiesFactory;
+import org.springframework.cloud.stream.binder.ProducerProperties;
+
+/**
+ * Producer binding capabilities factory for the target (egress) external binder.
+ *
+ * In a Target MI, the external system is the target side (we produce/write to it),
+ * so this factory declares how the target-side producer bindings acknowledge writes
+ * within the Solace MDK connector framework.
+ */
+public class TargetProducerBindingCapabilitiesFactory implements ProducerBindingCapabilitiesFactory {
+
+    @Override
+    public String getBinderType() {
+        return "{{ target_binder_type }}";
+    }
+
+    @Override
+    public ProducerBindingCapabilities create(ProducerProperties producerProperties) {
+        return new TargetProducerBindingCapabilities(producerProperties.getBindingName());
+    }
+
+    private static class TargetProducerBindingCapabilities implements ProducerBindingCapabilities {
+        private final String bindingName;
+
+        private TargetProducerBindingCapabilities(String bindingName) {
+            this.bindingName = bindingName;
+        }
+
+        @Override
+        public String getBindingName() {
+            return bindingName;
+        }
+
+        @Override
+        public ProducerAckMode getAcknowledgmentMode() {
+            return ProducerAckMode.ASYNC_BY_CALLBACK_HEADER;
+        }
+    }
+}

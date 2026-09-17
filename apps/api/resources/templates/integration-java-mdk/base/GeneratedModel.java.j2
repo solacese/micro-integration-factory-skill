@@ -1,0 +1,37 @@
+package com.spec2event.generated.model;
+
+{% if model_imports is defined %}
+{% for imp in model_imports %}
+import {{ imp }};
+{% endfor %}
+{% endif %}
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+/**
+ * Generated model: {{ model_name }}
+ *
+ * Auto-generated from source schema. Do not edit manually.
+ * Re-generate from the source spec to update.
+ */
+@JsonIgnoreProperties(ignoreUnknown = true)
+public class {{ model_name }} {
+
+{% for field in model_fields %}
+    @JsonProperty("{{ field.json_name }}")
+    private {{ field.java_type }} {{ field.java_name }};
+
+{% endfor %}
+    public {{ model_name }}() {}
+
+{% for field in model_fields %}
+    public {{ field.java_type }} get{{ field.java_name | capitalize_first }}() {
+        return {{ field.java_name }};
+    }
+
+    public void set{{ field.java_name | capitalize_first }}({{ field.java_type }} {{ field.java_name }}) {
+        this.{{ field.java_name }} = {{ field.java_name }};
+    }
+
+{% endfor %}
+}

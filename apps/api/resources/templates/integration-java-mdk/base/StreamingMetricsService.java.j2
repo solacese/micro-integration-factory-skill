@@ -1,0 +1,94 @@
+package com.spec2event.generated.service;
+
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
+import org.springframework.stereotype.Service;
+
+import java.time.Duration;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * Streaming metrics service for the {{ title }} micro-integration.
+ *
+ * Tracks key streaming health indicators:
+ * - Message throughput (messages/second)
+ * - Processing latency (per message)
+ * - Failure rate (failures/total)
+ * - Consumer lag (where applicable)
+ * - DLQ volume
+ *
+ * Metrics are exposed via Spring Actuator /metrics endpoint
+ * and can be scraped by Prometheus or pushed to Datadog/Grafana.
+ */
+@Service
+public class StreamingMetricsService {
+
+    private final Counter messagesReceived;
+    private final Counter messagesProcessed;
+    private final Counter messagesFailed;
+    private final Counter messagesDlq;
+    private final Timer processingLatency;
+    private final AtomicLong consumerLag;
+
+    public StreamingMetricsService(MeterRegistry meterRegistry) {
+        this.messagesReceived = Counter.builder("mi.messages.received")
+                .description("Total messages received from source")
+                .tag("service", "{{ service_name }}")
+                .register(meterRegistry);
+
+        this.messagesProcessed = Counter.builder("mi.messages.processed")
+                .description("Total messages successfully processed")
+                .tag("service", "{{ service_name }}")
+                .register(meterRegistry);
+
+        this.messagesFailed = Counter.builder("mi.messages.failed")
+                .description("Total messages that failed processing")
+                .tag("service", "{{ service_name }}")
+                .register(meterRegistry);
+
+        this.messagesDlq = Counter.builder("mi.messages.dlq")
+                .description("Total messages routed to DLQ")
+                .tag("service", "{{ service_name }}")
+                .register(meterRegistry);
+
+        this.processingLatency = Timer.builder("mi.processing.latency")
+                .description("Message processing latency")
+                .tag("service", "{{ service_name }}")
+                .register(meterRegistry);
+
+        this.consumerLag = meterRegistry.gauge(
+                "mi.consumer.lag",
+                new AtomicLong(0L)
+        );
+    }
+
+    public void recordReceived() {
+        messagesReceived.increment();
+    }
+
+    public void recordProcessed(Duration latency) {
+        messagesProcessed.increment();
+        processingLatency.record(latency);
+    }
+
+    public void recordFailed() {
+        messagesFailed.increment();
+    }
+
+    public void recordDlq() {
+        messagesDlq.increment();
+    }
+
+    public void updateLag(long lag) {
+        if (consumerLag != null) {
+            consumerLag.set(lag);
+        }
+    }
+
+    public double getFailureRate() {
+        double total = messagesReceived.count();
+        if (total == 0) return 0.0;
+        return messagesFailed.count() / total;
+    }
+}

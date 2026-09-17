@@ -1,0 +1,141 @@
+package com.spec2event.generated.api;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.spec2event.generated.service.CanonicalEventService;
+{% if file_mode %}
+import com.spec2event.generated.service.SourcePollingService;
+{% endif %}
+import com.spec2event.generated.service.SolacePublisherService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@RestController
+@RequestMapping
+public class SourceTriggerController {
+
+    private final CanonicalEventService canonicalEventService;
+    private final SolacePublisherService publisherService;
+    private final ObjectMapper objectMapper;
+{% if file_mode %}
+    private final SourcePollingService sourcePollingService;
+{% endif %}
+
+    public SourceTriggerController(
+            CanonicalEventService canonicalEventService,
+            SolacePublisherService publisherService,
+            ObjectMapper objectMapper{% if file_mode %},
+            SourcePollingService sourcePollingService{% endif %}
+    ) {
+        this.canonicalEventService = canonicalEventService;
+        this.publisherService = publisherService;
+        this.objectMapper = objectMapper;
+{% if file_mode %}
+        this.sourcePollingService = sourcePollingService;
+{% endif %}
+    }
+
+{% if webhook_mode %}
+    @PostMapping("{{ public_ingress_path }}")
+    public ResponseEntity<Map<String, Object>> acceptWebhook(
+            @RequestBody(required = false) JsonNode body,
+            @RequestHeader Map<String, String> headers
+    ) {
+        return publish("{{ primary_operation.operationId }}", body, headers, "{{ public_ingress_path }}");
+    }
+
+{% endif %}
+    @PostMapping("{{ internal_emit_path }}")
+    public ResponseEntity<Map<String, Object>> emit(
+            @RequestBody(required = false) JsonNode body,
+            @RequestHeader Map<String, String> headers
+    ) {
+        JsonNode payload = body != null && body.has("payload") ? body.get("payload") : body;
+        JsonNode metadata = body != null && body.has("metadata")
+                ? body.get("metadata")
+                : objectMapper.createObjectNode();
+        return publish(
+                "{{ primary_operation.operationId }}",
+                enrichPayload(payload, metadata),
+                headers,
+                "{{ internal_emit_path }}"
+        );
+    }
+
+{% if file_mode %}
+    @PostMapping("{{ internal_poll_path }}")
+    public ResponseEntity<Map<String, Object>> pollNow(
+            @RequestBody(required = false) PollRequest request,
+            @RequestHeader Map<String, String> headers
+    ) {
+        int requestedLimit = request != null && request.limit() != null
+                ? request.limit()
+                : sourcePollingService.defaultBatchSize();
+        String correlationId = headers.getOrDefault("x-correlation-id", UUID.randomUUID().toString());
+        SourcePollingService.PollResult result = sourcePollingService.pollOnce(requestedLimit, correlationId);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", "accepted");
+        response.put("operationId", "{{ primary_operation.operationId }}");
+        response.put("correlationId", correlationId);
+        response.put("publishedTopics", result.publishedTopics());
+        response.put("fileCount", result.fileCount());
+        response.put("processedFiles", result.processedFiles());
+        response.put("receivedAt", Instant.now().toString());
+        return ResponseEntity.ok(response);
+    }
+
+{% endif %}
+    private ResponseEntity<Map<String, Object>> publish(
+            String operationId,
+            JsonNode payload,
+            Map<String, String> headers,
+            String ingressPath
+    ) {
+        String correlationId = headers.getOrDefault("x-correlation-id", UUID.randomUUID().toString());
+        JsonNode normalizedPayload = payload != null ? payload : objectMapper.createObjectNode();
+        List<CanonicalEventService.EventBlueprint> blueprints =
+                canonicalEventService.planForOperation(operationId, normalizedPayload);
+        List<String> publishedTopics = publisherService.publish(
+                blueprints,
+                normalizedPayload,
+                correlationId,
+                operationId
+        );
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", "accepted");
+        response.put("operationId", operationId);
+        response.put("sourceMode", "{{ source_mode }}");
+        response.put("adapterType", "{{ adapter_type }}");
+        response.put("ingressPath", ingressPath);
+        response.put("correlationId", correlationId);
+        response.put("publishedTopics", publishedTopics);
+        response.put("eventCount", publishedTopics.size());
+        response.put("receivedAt", Instant.now().toString());
+        return ResponseEntity.ok(response);
+    }
+
+    private JsonNode enrichPayload(JsonNode payload, JsonNode metadata) {
+        ObjectNode root = payload != null && payload.isObject()
+                ? (ObjectNode) payload.deepCopy()
+                : objectMapper.createObjectNode();
+        root.set("_metadata", metadata != null ? metadata : objectMapper.createObjectNode());
+        return root;
+    }
+
+{% if file_mode %}
+    public record PollRequest(Integer limit) {}
+{% endif %}
+}

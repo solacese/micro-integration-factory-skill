@@ -1,0 +1,42 @@
+package com.spec2event.generated.transform;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.stereotype.Component;
+
+import jakarta.annotation.PostConstruct;
+import java.util.function.Function;
+
+/**
+ * DataWeave transform for the {{ title }} micro-integration.
+ *
+ * Loads a DataWeave (.dwl) script from the classpath and applies it to
+ * each message payload. Requires a DataWeave runtime on the classpath.
+ *
+ * Note: DataWeave runtime is a MuleSoft component. For environments without
+ * it, consider using JOLT or field mapping instead.
+ */
+@Component("messageTransform")
+public class DataWeaveTransform implements Function<JsonNode, JsonNode> {
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
+    private String dwlScript;
+
+    @PostConstruct
+    public void init() throws Exception {
+        this.dwlScript = new String(
+            new ClassPathResource("transforms/transform.dwl").getInputStream().readAllBytes()
+        );
+    }
+
+    @Override
+    public JsonNode apply(JsonNode input) {
+        // TODO: Integrate with DataWeave runtime
+        // For now, pass through until DataWeave runtime dependency is configured
+        // Example integration:
+        //   DataWeaveResult result = DataWeave.execute(dwlScript, input);
+        //   return objectMapper.readTree(result.getOutput());
+        return input;
+    }
+}

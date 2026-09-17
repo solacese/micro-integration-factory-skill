@@ -1,0 +1,21 @@
+package com.spec2event.generated.transform;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.stereotype.Component;
+
+import java.util.function.Function;
+
+/**
+ * Passthrough transform for the {{ title }} micro-integration.
+ *
+ * Messages pass through without modification. This is the default
+ * transform when no transformation logic is specified.
+ */
+@Component("messageTransform")
+public class PassthroughTransform implements Function<JsonNode, JsonNode> {
+
+    @Override
+    public JsonNode apply(JsonNode input) {
+        return input;
+    }
+}

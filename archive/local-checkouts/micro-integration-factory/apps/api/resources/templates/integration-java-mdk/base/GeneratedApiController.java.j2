@@ -1,0 +1,85 @@
+package com.spec2event.generated.api;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.spec2event.generated.service.CanonicalEventService;
+import com.spec2event.generated.service.SolacePublisherService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestMethod;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@RestController
+@RequestMapping
+public class GeneratedApiController {
+
+    private final CanonicalEventService canonicalEventService;
+    private final SolacePublisherService publisherService;
+    private final ObjectMapper objectMapper;
+
+    public GeneratedApiController(
+            CanonicalEventService canonicalEventService,
+            SolacePublisherService publisherService,
+            ObjectMapper objectMapper
+    ) {
+        this.canonicalEventService = canonicalEventService;
+        this.publisherService = publisherService;
+        this.objectMapper = objectMapper;
+    }
+
+{% for operation in operations %}
+    @RequestMapping(path = "{{ operation.path }}", method = RequestMethod.{{ operation.method }})
+    public ResponseEntity<Map<String, Object>> {{ operation.methodName }}(
+            @RequestBody(required = false) JsonNode body,
+            @PathVariable Map<String, String> pathVariables,
+            @RequestParam Map<String, String> queryParams,
+            @RequestHeader Map<String, String> headers
+    ) {
+        String correlationId = headers.getOrDefault("x-correlation-id", UUID.randomUUID().toString());
+        JsonNode normalizedPayload = mergePayload(body, pathVariables, queryParams);
+{% if operation.expectsBody %}
+        if (body == null || body.isNull()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "status", "validation_failed",
+                    "operationId", "{{ operation.operationId }}",
+                    "reason", "Request body is required",
+                    "correlationId", correlationId
+            ));
+        }
+{% endif %}
+        List<CanonicalEventService.EventBlueprint> blueprints = canonicalEventService.planForOperation("{{ operation.operationId }}", normalizedPayload);
+        List<String> publishedTopics = publisherService.publish(blueprints, normalizedPayload, correlationId, "{{ operation.operationId }}");
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", "accepted");
+        response.put("operationId", "{{ operation.operationId }}");
+        response.put("summary", "{{ operation.summary|replace('"', '\\"') }}");
+        response.put("correlationId", correlationId);
+        response.put("publishedTopics", publishedTopics);
+        response.put("eventCount", publishedTopics.size());
+        response.put("receivedAt", Instant.now().toString());
+        return ResponseEntity.ok(response);
+    }
+
+{% endfor %}
+    private JsonNode mergePayload(JsonNode body, Map<String, String> pathVariables, Map<String, String> queryParams) {
+        ObjectNode root = body != null && body.isObject() ? (ObjectNode) body.deepCopy() : objectMapper.createObjectNode();
+        ObjectNode pathNode = objectMapper.createObjectNode();
+        pathVariables.forEach(pathNode::put);
+        ObjectNode queryNode = objectMapper.createObjectNode();
+        queryParams.forEach(queryNode::put);
+        root.set("_pathParameters", pathNode);
+        root.set("_queryParameters", queryNode);
+        return root;
+    }
+}

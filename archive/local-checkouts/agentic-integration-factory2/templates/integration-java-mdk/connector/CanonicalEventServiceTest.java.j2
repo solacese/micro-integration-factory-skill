@@ -1,0 +1,22 @@
+package com.spec2event.generated;
+
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.spec2event.generated.service.CanonicalEventService;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertFalse;
+
+class CanonicalEventServiceTest {
+
+    @Test
+    void returnsBindingsForConfiguredOperation() {
+        CanonicalEventService service = new CanonicalEventService();
+
+        assertFalse(
+                service.planForOperation(
+                        "{{ primary_operation.operationId }}",
+                        JsonNodeFactory.instance.objectNode()
+                ).isEmpty()
+        );
+    }
+}

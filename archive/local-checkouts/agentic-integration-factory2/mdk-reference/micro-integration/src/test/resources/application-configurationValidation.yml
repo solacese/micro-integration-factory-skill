@@ -1,0 +1,21 @@
+spring:
+  cloud:
+    stream:
+      bindings:
+        input-0:
+          binder: solace
+        output-0:
+          binder: simple-queuing
+          destination: DLQ
+
+solace:
+  connector:
+    workflows:
+      0:
+        enabled: false
+
+logging:
+  level:
+    root: INFO
+    com.solace.connector.core: TRACE
+    com.solace.spring.cloud.stream.binder: TRACE

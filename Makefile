@@ -73,3 +73,9 @@ demo-ec2-down: ## Tear down EC2 control plane demo
 
 demo-ec2-status: ## Check EC2 control plane status
 	cd apps/api && uv run python -m spec2event.control_plane status
+
+new-connector: ## Scaffold a new connector (NAME=... DIRECTION=source|target|both)
+	cd apps/api && uv run python scripts/scaffold_connector.py --name $(NAME) --direction $(or $(DIRECTION),source)
+
+new-transform: ## Scaffold a new transform engine (NAME=...)
+	cd apps/api && uv run python scripts/scaffold_transform.py --name $(NAME)

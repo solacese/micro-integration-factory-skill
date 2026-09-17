@@ -1,0 +1,72 @@
+package com.spec2event.generated.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.messaging.Message;
+
+import java.util.List;
+import java.util.UUID;
+import java.util.function.Consumer;
+
+/**
+ * Event-subscriber ingress adapter for the {{ title }} micro-integration.
+ *
+ * This service receives messages from an external broker (MQTT, Kafka, etc.)
+ * via Spring Cloud Stream input bindings and re-publishes each one as a
+ * canonical event through the Solace MDK pipeline.
+ *
+ * Wire the input binding in application.yml:
+ *   spring.cloud.stream.bindings.sourceIngest-in-0.destination=<source-topic>
+ */
+@Configuration
+public class EventSubscriberService {
+
+    private static final Logger log = LoggerFactory.getLogger(EventSubscriberService.class);
+
+    private final CanonicalEventService canonicalEventService;
+    private final SolacePublisherService publisherService;
+    private final ObjectMapper objectMapper;
+
+    public EventSubscriberService(
+            CanonicalEventService canonicalEventService,
+            SolacePublisherService publisherService,
+            ObjectMapper objectMapper
+    ) {
+        this.canonicalEventService = canonicalEventService;
+        this.publisherService = publisherService;
+        this.objectMapper = objectMapper;
+    }
+
+    /**
+     * Spring Cloud Stream consumer function.
+     *
+     * Each inbound message is deserialized, mapped to canonical events via the
+     * CanonicalEventService, and published to Solace topics.
+     */
+    @Bean
+    public Consumer<Message<byte[]>> sourceIngest() {
+        return message -> {
+            try {
+                JsonNode payload = objectMapper.readTree(message.getPayload());
+                String correlationId = UUID.randomUUID().toString();
+{% for operation in operations if operation.emitsEvent %}
+{% if loop.first %}
+                String operationId = "{{ operation.operationId }}";
+{% endif %}
+{% endfor %}
+                List<CanonicalEventService.EventBlueprint> blueprints =
+                        canonicalEventService.planForOperation(operationId, payload);
+                List<String> published = publisherService.publish(
+                        blueprints, payload, correlationId, operationId);
+                log.debug("Re-published {} canonical events for correlationId={}",
+                        published.size(), correlationId);
+            } catch (Exception e) {
+                log.error("Failed to process inbound message", e);
+            }
+        };
+    }
+}

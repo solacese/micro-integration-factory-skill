@@ -1,0 +1,25 @@
+{
+  "sourceMode": "file",
+  "name": "Nightly Inventory Drops",
+  "version": "1.0.0",
+  "description": "Poll inventory files and publish stock observations.",
+  "applicationDomainName": "Supply Chain Source Integrations",
+  "topicRoot": "supply",
+  "sourceDetails": {
+    "inputDirectory": "./demo/inventory/inbox",
+    "archiveDirectory": "./demo/inventory/archive",
+    "pollIntervalSeconds": 30
+  },
+  "events": [
+    {
+      "name": "InventorySnapshotObserved",
+      "entity": "inventory",
+      "action": "observed",
+      "payloadExample": {
+        "sku": "SKU-100",
+        "quantity": 42,
+        "warehouse": "paris"
+      }
+    }
+  ]
+}

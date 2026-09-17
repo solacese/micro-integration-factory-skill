@@ -1,0 +1,88 @@
+package com.spec2event.generated.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.scheduling.annotation.EnableScheduling;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * Polling-based ingress adapter for the {{ title }} micro-integration.
+ *
+ * This service runs on a fixed schedule, queries the configured source for
+ * new or changed records, and publishes each one as a canonical event through
+ * the Solace MDK pipeline.
+ *
+ * The poll method is intentionally simple — production implementations should
+ * add cursor/offset tracking, connection pooling, and back-pressure handling.
+ */
+@Service
+@EnableScheduling
+public class PollingConsumerService {
+
+    private static final Logger log = LoggerFactory.getLogger(PollingConsumerService.class);
+
+    private final CanonicalEventService canonicalEventService;
+    private final SolacePublisherService publisherService;
+    private final ObjectMapper objectMapper;
+
+    public PollingConsumerService(
+            CanonicalEventService canonicalEventService,
+            SolacePublisherService publisherService,
+            ObjectMapper objectMapper
+    ) {
+        this.canonicalEventService = canonicalEventService;
+        this.publisherService = publisherService;
+        this.objectMapper = objectMapper;
+    }
+
+    /**
+     * Poll the source and publish events for each record found.
+     * Runs every ${POLL_INTERVAL_MS:5000} milliseconds.
+     */
+    @Scheduled(fixedDelayString = "${POLL_INTERVAL_MS:5000}")
+    public void poll() {
+        log.debug("Polling source for new records");
+        try {
+            List<JsonNode> records = fetchRecords();
+            if (records.isEmpty()) {
+                return;
+            }
+            log.info("Fetched {} records from source", records.size());
+{% for operation in operations if operation.emitsEvent %}
+            for (JsonNode record : records) {
+                String correlationId = UUID.randomUUID().toString();
+                List<CanonicalEventService.EventBlueprint> blueprints =
+                        canonicalEventService.planForOperation("{{ operation.operationId }}", record);
+                List<String> published = publisherService.publish(
+                        blueprints, record, correlationId, "{{ operation.operationId }}");
+                log.debug("Published {} events for correlationId={}", published.size(), correlationId);
+            }
+{% endfor %}
+        } catch (Exception e) {
+            log.error("Polling cycle failed", e);
+        }
+    }
+
+    /**
+     * Fetch new records from the source system.
+     *
+     * Override or replace this method with actual source connectivity
+     * (JDBC query, file reader, HTTP client, etc.).
+     */
+    private List<JsonNode> fetchRecords() {
+        // Placeholder: return an empty list until a real source connector is wired in.
+        // In a production integration, this method would:
+        //   - Execute a SQL query and track the last-seen cursor/offset
+        //   - Read new files from a watched directory
+        //   - Call an external API with pagination
+        return List.of();
+    }
+}

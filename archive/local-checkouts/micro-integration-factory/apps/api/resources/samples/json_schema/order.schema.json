@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Order",
+  "description": "A customer order in an e-commerce system.",
+  "type": "object",
+  "properties": {
+    "orderId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Unique identifier for the order."
+    },
+    "customerId": {
+      "type": "string",
+      "format": "uuid",
+      "description": "Identifier of the customer who placed the order."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "confirmed", "shipped", "delivered", "cancelled"],
+      "description": "Current status of the order."
+    },
+    "items": {
+      "type": "array",
+      "description": "Line items in the order.",
+      "items": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Product SKU."
+          },
+          "quantity": {
+            "type": "integer",
+            "description": "Quantity ordered."
+          },
+          "unitPrice": {
+            "type": "number",
+            "description": "Price per unit."
+          }
+        },
+        "required": ["sku", "quantity", "unitPrice"]
+      }
+    },
+    "totalAmount": {
+      "type": "number",
+      "description": "Total monetary value of the order."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when the order was created."
+    }
+  },
+  "required": ["orderId", "customerId", "status", "items", "totalAmount", "createdAt"]
+}

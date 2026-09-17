@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE_URL="${BASE_URL:-http://localhost:8080}"
+
+{% if webhook_mode %}
+curl -X POST "${BASE_URL}{{ public_ingress_path }}" \
+  -H 'Content-Type: application/json' \
+  -d '{"event":"demo","payload":{"status":"received"}}'
+{% elif file_mode %}
+curl -X POST "${BASE_URL}{{ internal_poll_path }}" \
+  -H 'Content-Type: application/json' \
+  -d '{"limit":5}'
+{% else %}
+curl -X POST "${BASE_URL}{{ internal_emit_path }}" \
+  -H 'Content-Type: application/json' \
+  -d '{"payload":{"message":"demo"},"metadata":{"sourceAddress":"demo-source"}}'
+{% endif %}

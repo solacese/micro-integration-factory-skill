@@ -1,0 +1,9 @@
+{% if script_content is defined and script_content %}
+{{ script_content }}
+{% else %}
+// Default transform script: pass through unchanged
+// The variable 'input' contains the JSON payload as a string.
+// Return the transformed JSON as a string.
+var result = JSON.parse(input);
+JSON.stringify(result);
+{% endif %}

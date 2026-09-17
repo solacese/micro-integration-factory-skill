@@ -1,0 +1,77 @@
+package com.spec2event.generated.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.messaging.Message;
+
+import java.util.UUID;
+import java.util.function.Consumer;
+
+/**
+ * Solace consumer service for the {{ title }} target micro-integration.
+ *
+ * This service subscribes to Solace topics and delivers each message to the
+ * configured target system via the TargetDispatcherService.
+ *
+ * Direction: Solace -> External system (target/egress)
+ *
+ * Wire the input binding in application.yml:
+ *   spring.cloud.stream.bindings.solaceIngest-in-0.destination=<solace-topic>
+ *   spring.cloud.stream.bindings.solaceIngest-in-0.group=<consumer-group>
+ */
+@Configuration
+public class SolaceConsumerService {
+
+    private static final Logger log = LoggerFactory.getLogger(SolaceConsumerService.class);
+
+    private final TargetDispatcherService targetDispatcher;
+    private final ObjectMapper objectMapper;
+
+    public SolaceConsumerService(
+            TargetDispatcherService targetDispatcher,
+            ObjectMapper objectMapper
+    ) {
+        this.targetDispatcher = targetDispatcher;
+        this.objectMapper = objectMapper;
+    }
+
+    /**
+     * Spring Cloud Stream consumer function.
+     *
+     * Each inbound Solace message is deserialized, then dispatched to the
+     * external target system with retry and idempotency support.
+     */
+    @Bean
+    public Consumer<Message<byte[]>> solaceIngest() {
+        return message -> {
+            String correlationId = extractCorrelationId(message);
+            try {
+                JsonNode payload = objectMapper.readTree(message.getPayload());
+                String eventName = extractHeader(message, "eventName", "unknown");
+
+                log.debug("Received Solace event={} correlationId={}", eventName, correlationId);
+
+                targetDispatcher.dispatch(payload, eventName, correlationId);
+
+                log.debug("Dispatched to target for correlationId={}", correlationId);
+            } catch (Exception e) {
+                log.error("Failed to dispatch message correlationId={}", correlationId, e);
+                throw new RuntimeException("Target dispatch failed", e);
+            }
+        };
+    }
+
+    private String extractCorrelationId(Message<?> message) {
+        Object header = message.getHeaders().get("correlationId");
+        return header != null ? header.toString() : UUID.randomUUID().toString();
+    }
+
+    private String extractHeader(Message<?> message, String key, String defaultValue) {
+        Object header = message.getHeaders().get(key);
+        return header != null ? header.toString() : defaultValue;
+    }
+}

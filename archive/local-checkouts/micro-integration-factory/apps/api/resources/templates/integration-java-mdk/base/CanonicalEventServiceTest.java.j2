@@ -1,0 +1,21 @@
+package com.spec2event.generated;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.spec2event.generated.service.CanonicalEventService;
+import org.junit.jupiter.api.Test;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class CanonicalEventServiceTest {
+
+    private final CanonicalEventService service = new CanonicalEventService();
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @Test
+    void plansEventsForGeneratedOperation() {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("demo", "value");
+        assertThat(service.planForOperation("{{ operations[0].operationId }}", payload)).isNotNull();
+    }
+}

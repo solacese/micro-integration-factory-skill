@@ -1,0 +1,169 @@
+package com.spec2event.generated.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.stereotype.Service;
+
+import java.util.ArrayList;
+import java.util.List;
+
+@Service
+public class CanonicalEventService {
+
+    public record EventBlueprint(
+            String bindingName,
+            String topicName,
+            String eventName,
+            String schemaName,
+            String applicationName,
+            String sourceSystem,
+            String contentType,
+            String schemaFormat,
+            String serializerFamily,
+            String deserializerFamily,
+            String schemaSubject,
+            String schemaVersion,
+            String compatibilityMode
+    ) {}
+
+    private record EventRule(
+            EventBlueprint blueprint,
+            String kind,
+            String column,
+            Double fromGreaterThan,
+            Double toLessOrEqual,
+            Double fromLessOrEqual,
+            Double toGreaterThan
+    ) {}
+
+    private static final List<String> BUSINESS_COLUMNS = List.of(
+{% for column_name in database_config.businessColumns %}
+            "{{ column_name }}"{% if not loop.last %},{% endif %}
+{% endfor %}
+    );
+
+    private static final List<EventRule> EVENT_RULES = List.of(
+{% for event in event_bindings %}
+            new EventRule(
+                    new EventBlueprint(
+                            "{{ event.bindingName }}",
+                            "{{ event.topicName }}",
+                            "{{ event.eventName }}",
+                            "{{ event.schemaName }}",
+                            "{{ event.applicationName }}",
+                            "{{ event.sourceSystem }}",
+                            "{{ event.contentType }}",
+                            "{{ event.schemaFormat }}",
+                            "{{ event.serializerFamily }}",
+                            "{{ event.deserializerFamily }}",
+                            "{{ event.schemaSubject }}",
+                            "{{ event.schemaVersion }}",
+                            "{{ event.compatibilityMode }}"
+                    ),
+                    "{{ event.matchStrategy.kind }}",
+                    {% if event.matchStrategy.column is defined %}"{{ event.matchStrategy.column }}"{% else %}null{% endif %},
+                    {% if event.matchStrategy.fromGreaterThan is defined %}{{ event.matchStrategy.fromGreaterThan }}d{% else %}null{% endif %},
+                    {% if event.matchStrategy.toLessOrEqual is defined %}{{ event.matchStrategy.toLessOrEqual }}d{% else %}null{% endif %},
+                    {% if event.matchStrategy.fromLessOrEqual is defined %}{{ event.matchStrategy.fromLessOrEqual }}d{% else %}null{% endif %},
+                    {% if event.matchStrategy.toGreaterThan is defined %}{{ event.matchStrategy.toGreaterThan }}d{% else %}null{% endif %}
+            ){% if not loop.last %},{% endif %}
+{% endfor %}
+    );
+
+    public List<EventBlueprint> planForRecord(JsonNode payload, JsonNode previousPayload) {
+        List<EventBlueprint> matches = new ArrayList<>();
+        for (EventRule rule : EVENT_RULES) {
+            if (matches(rule, payload, previousPayload)) {
+                matches.add(rule.blueprint());
+            }
+        }
+        return matches;
+    }
+
+    private boolean matches(EventRule rule, JsonNode payload, JsonNode previousPayload) {
+        return switch (rule.kind()) {
+            case "always" -> true;
+            case "created" -> previousPayload == null || previousPayload.isNull();
+            case "row_changed" -> previousPayload != null && !payload.equals(previousPayload);
+            case "any_business_field_changed" -> hasAnyBusinessChange(payload, previousPayload);
+            case "column_changed" -> hasChanged(payload, previousPayload, rule.column());
+            case "numeric_increase" -> numericDelta(payload, previousPayload, rule.column()) > 0;
+            case "numeric_decrease" -> numericDelta(payload, previousPayload, rule.column()) < 0;
+            case "crosses_threshold" -> crossesThreshold(payload, previousPayload, rule);
+            default -> false;
+        };
+    }
+
+    private boolean hasAnyBusinessChange(JsonNode payload, JsonNode previousPayload) {
+        if (previousPayload == null || previousPayload.isNull()) {
+            return false;
+        }
+        for (String column : BUSINESS_COLUMNS) {
+            if (hasChanged(payload, previousPayload, column)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasChanged(JsonNode payload, JsonNode previousPayload, String column) {
+        if (column == null || previousPayload == null || previousPayload.isNull()) {
+            return false;
+        }
+        JsonNode currentValue = payload.path(column);
+        JsonNode previousValue = previousPayload.path(column);
+        return !currentValue.equals(previousValue);
+    }
+
+    private double numericDelta(JsonNode payload, JsonNode previousPayload, String column) {
+        if (!hasChanged(payload, previousPayload, column)) {
+            return 0;
+        }
+        Double current = asDouble(payload.path(column));
+        Double previous = asDouble(previousPayload.path(column));
+        if (current == null || previous == null) {
+            return 0;
+        }
+        return current - previous;
+    }
+
+    private boolean crossesThreshold(JsonNode payload, JsonNode previousPayload, EventRule rule) {
+        if (!hasChanged(payload, previousPayload, rule.column())) {
+            return false;
+        }
+        Double current = asDouble(payload.path(rule.column()));
+        Double previous = asDouble(previousPayload.path(rule.column()));
+        if (current == null || previous == null) {
+            return false;
+        }
+        if (rule.fromGreaterThan() != null && !(previous > rule.fromGreaterThan())) {
+            return false;
+        }
+        if (rule.toLessOrEqual() != null && !(current <= rule.toLessOrEqual())) {
+            return false;
+        }
+        if (rule.fromLessOrEqual() != null && !(previous <= rule.fromLessOrEqual())) {
+            return false;
+        }
+        if (rule.toGreaterThan() != null && !(current > rule.toGreaterThan())) {
+            return false;
+        }
+        return true;
+    }
+
+    private Double asDouble(JsonNode value) {
+        if (value == null || value.isMissingNode() || value.isNull()) {
+            return null;
+        }
+        if (value.isNumber()) {
+            return value.asDouble();
+        }
+        if (value.isTextual()) {
+            try {
+                return Double.parseDouble(value.asText());
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+}

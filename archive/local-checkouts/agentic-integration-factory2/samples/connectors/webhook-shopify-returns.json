@@ -1,0 +1,23 @@
+{
+  "sourceMode": "webhook",
+  "name": "Shopify Returns Webhook",
+  "version": "1.0.0",
+  "description": "Accept return webhooks and publish canonical return lifecycle events.",
+  "applicationDomainName": "Commerce Source Integrations",
+  "topicRoot": "commerce",
+  "sourceDetails": {
+    "publicPath": "/webhooks/shopify/returns"
+  },
+  "events": [
+    {
+      "name": "ReturnRequested",
+      "entity": "return",
+      "action": "requested",
+      "payloadExample": {
+        "returnId": "ret_123",
+        "orderId": "ord_456",
+        "status": "requested"
+      }
+    }
+  ]
+}

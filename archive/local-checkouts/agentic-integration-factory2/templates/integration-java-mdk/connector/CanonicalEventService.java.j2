@@ -1,0 +1,42 @@
+package com.spec2event.generated.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.stereotype.Service;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+@Service
+public class CanonicalEventService {
+
+    public record EventBlueprint(
+            String bindingName,
+            String topicName,
+            String eventName,
+            String schemaName,
+            String applicationName
+    ) {}
+
+    private static final Map<String, List<EventBlueprint>> OPERATION_EVENTS = new LinkedHashMap<>();
+
+    static {
+{% for operation in operations if operation.eventCandidates %}
+        OPERATION_EVENTS.put("{{ operation.operationId }}", List.of(
+{% for event in operation.eventCandidates %}
+                new EventBlueprint(
+                        "{{ event.bindingName }}",
+                        "{{ event.topicName }}",
+                        "{{ event.canonicalEventName }}",
+                        "{{ event.schemaName }}",
+                        "{{ event.applicationName }}"
+                ){% if not loop.last %},{% endif %}
+{% endfor %}
+        ));
+{% endfor %}
+    }
+
+    public List<EventBlueprint> planForOperation(String operationId, JsonNode payload) {
+        return OPERATION_EVENTS.getOrDefault(operationId, List.of());
+    }
+}

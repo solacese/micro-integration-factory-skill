@@ -1,0 +1,87 @@
+package com.spec2event.generated.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.stereotype.Service;
+import org.springframework.cloud.stream.function.StreamBridge;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+@Service
+public class SolacePublisherService {
+
+    private final StreamBridge streamBridge;
+
+    public SolacePublisherService(StreamBridge streamBridge) {
+        this.streamBridge = streamBridge;
+    }
+
+    public List<String> publish(
+            List<CanonicalEventService.EventBlueprint> blueprints,
+            JsonNode payload,
+            String correlationId,
+            String sourceOperationId
+    ) {
+        List<String> publishedTopics = new ArrayList<>();
+        String sourceRecordId = extractSourceRecordId(payload);
+        for (CanonicalEventService.EventBlueprint blueprint : blueprints) {
+            String occurredAt = Instant.now().toString();
+            Map<String, Object> metadata = new LinkedHashMap<>();
+            metadata.put("eventType", blueprint.eventName());
+            metadata.put("schemaName", blueprint.schemaName());
+            metadata.put("schemaVersion", blueprint.schemaVersion());
+            metadata.put("schemaSubject", blueprint.schemaSubject());
+            metadata.put("contentType", blueprint.contentType());
+            metadata.put("schemaFormat", blueprint.schemaFormat());
+            metadata.put("serializerFamily", blueprint.serializerFamily());
+            metadata.put("deserializerFamily", blueprint.deserializerFamily());
+            metadata.put("compatibilityMode", blueprint.compatibilityMode());
+            metadata.put("applicationName", blueprint.applicationName());
+            metadata.put("sourceSystem", blueprint.sourceSystem());
+            metadata.put("sourceOperationId", sourceOperationId);
+            metadata.put("sourceRecordId", sourceRecordId);
+            metadata.put("correlationId", correlationId);
+            metadata.put("occurredAt", occurredAt);
+
+            Map<String, Object> envelope = new LinkedHashMap<>();
+            envelope.put("meta", metadata);
+            envelope.put("payload", payload);
+            streamBridge.send(
+                    blueprint.bindingName(),
+                    MessageBuilder.withPayload(envelope)
+                            .setHeader("correlationId", correlationId)
+                            .setHeader("eventName", blueprint.eventName())
+                            .setHeader("event-type", blueprint.eventName())
+                            .setHeader("schema-name", blueprint.schemaName())
+                            .setHeader("schema-version", blueprint.schemaVersion())
+                            .setHeader("content-type", blueprint.contentType())
+                            .setHeader("source-system", blueprint.sourceSystem())
+                            .setHeader("source-record-id", sourceRecordId)
+                            .setHeader("occurred-at", occurredAt)
+                            .build()
+            );
+            publishedTopics.add(blueprint.topicName());
+        }
+        return publishedTopics;
+    }
+
+    private String extractSourceRecordId(JsonNode payload) {
+        if (payload == null || payload.isNull()) {
+            return "unknown";
+        }
+        if (payload.hasNonNull("id")) {
+            return payload.get("id").asText();
+        }
+        if (payload.path("data").path("object").hasNonNull("id")) {
+            return payload.path("data").path("object").get("id").asText();
+        }
+        if (payload.path("_pathParameters").hasNonNull("id")) {
+            return payload.path("_pathParameters").get("id").asText();
+        }
+        return "unknown";
+    }
+}

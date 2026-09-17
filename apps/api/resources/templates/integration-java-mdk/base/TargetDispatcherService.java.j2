@@ -1,0 +1,54 @@
+package com.spec2event.generated.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+/**
+ * Target dispatcher for the {{ title }} micro-integration.
+ *
+ * This service handles delivery of messages from Solace to the external
+ * target system. It provides:
+ * - Idempotent writes (based on correlationId deduplication)
+ * - Retry with exponential backoff
+ * - Dead-letter handling for permanently failed messages
+ *
+ * Direction: Solace -> External system (target/egress)
+ */
+@Service
+public class TargetDispatcherService {
+
+    private static final Logger log = LoggerFactory.getLogger(TargetDispatcherService.class);
+
+    /**
+     * Dispatch a message payload to the external target system.
+     *
+     * @param payload       The event payload to deliver
+     * @param eventName     The canonical event name for routing
+     * @param correlationId Correlation ID for tracing and idempotency
+     */
+    public void dispatch(JsonNode payload, String eventName, String correlationId) {
+        // TODO: Replace with actual target system integration
+        // Examples:
+        //   - REST sink: POST to an external webhook/API endpoint
+        //   - Database sink: Upsert into target table using correlationId as dedup key
+        //   - File sink: Write to object storage / file system
+        //   - Queue sink: Forward to AMQP/JMS queue
+
+        log.info("Dispatching event={} correlationId={} to target system", eventName, correlationId);
+        log.debug("Payload: {}", payload);
+
+        // Idempotency check placeholder:
+        // if (idempotencyStore.exists(correlationId)) {
+        //     log.info("Duplicate message detected, skipping correlationId={}", correlationId);
+        //     return;
+        // }
+
+        // Target delivery logic goes here
+        // ...
+
+        // Record successful delivery for idempotency:
+        // idempotencyStore.record(correlationId);
+    }
+}

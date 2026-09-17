@@ -1,0 +1,46 @@
+replicaCount: 2
+
+image:
+  repository: {{ artifact_id }}
+  tag: {{ service_version }}
+  pullPolicy: IfNotPresent
+
+deployment:
+  minReadySeconds: 10
+  maxUnavailable: 0
+  maxSurge: 1
+
+service:
+  port: 80
+  targetPort: 8080
+
+env:
+  SOLACE_BROKER_URL: ""
+  SOLACE_VPN: ""
+  SOLACE_USERNAME: ""
+  SOLACE_PASSWORD: ""
+  STRIPE_WEBHOOK_SECRET: ""
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 768Mi
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  runAsNonRoot: true
+  readOnlyRootFilesystem: false
+
+probes:
+  path: /actuator/health
+  initialDelaySeconds: 20
+  periodSeconds: 10
+  timeoutSeconds: 3
+  failureThreshold: 6
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

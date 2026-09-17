@@ -1,0 +1,42 @@
+package com.spec2event.generated.binding;
+
+import com.solace.connector.core.io.provider.ProducerBindingCapabilities;
+import com.solace.connector.core.io.provider.ProducerBindingCapabilitiesFactory;
+import org.springframework.cloud.stream.binder.ProducerProperties;
+
+/**
+ * Producer binding capabilities factory for the {{ source_binder_type }} binder.
+ *
+ * Declares how the source-side producer bindings acknowledge messages within
+ * the Solace MDK connector framework.
+ */
+public class SourceProducerBindingCapabilitiesFactory implements ProducerBindingCapabilitiesFactory {
+
+    @Override
+    public String getBinderType() {
+        return "{{ source_binder_type }}";
+    }
+
+    @Override
+    public ProducerBindingCapabilities create(ProducerProperties producerProperties) {
+        return new SourceProducerBindingCapabilities(producerProperties.getBindingName());
+    }
+
+    private static class SourceProducerBindingCapabilities implements ProducerBindingCapabilities {
+        private final String bindingName;
+
+        private SourceProducerBindingCapabilities(String bindingName) {
+            this.bindingName = bindingName;
+        }
+
+        @Override
+        public String getBindingName() {
+            return bindingName;
+        }
+
+        @Override
+        public ProducerAckMode getAcknowledgmentMode() {
+            return ProducerAckMode.ASYNC_BY_CALLBACK_HEADER;
+        }
+    }
+}

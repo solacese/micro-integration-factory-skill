@@ -1,0 +1,56 @@
+package com.spec2event.generated.service;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Component;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+@Component
+public class StripeSignatureVerifier {
+
+    private final String webhookSecret;
+
+    public StripeSignatureVerifier(@Value("${STRIPE_WEBHOOK_SECRET:}") String webhookSecret) {
+        this.webhookSecret = webhookSecret;
+    }
+
+    public boolean isValid(String payload, String signatureHeader) throws Exception {
+        if (webhookSecret == null || webhookSecret.isBlank()) {
+            return true;
+        }
+        if (signatureHeader == null || signatureHeader.isBlank()) {
+            return false;
+        }
+        Map<String, String> values = parseHeader(signatureHeader);
+        String timestamp = values.get("t");
+        String expected = values.get("v1");
+        if (timestamp == null || expected == null) {
+            return false;
+        }
+        String signedPayload = timestamp + "." + payload;
+        Mac mac = Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(webhookSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+        byte[] digest = mac.doFinal(signedPayload.getBytes(StandardCharsets.UTF_8));
+        StringBuilder builder = new StringBuilder();
+        for (byte b : digest) {
+            builder.append(String.format("%02x", b));
+        }
+        return builder.toString().equals(expected);
+    }
+
+    private Map<String, String> parseHeader(String signatureHeader) {
+        Map<String, String> values = new LinkedHashMap<>();
+        for (String part : signatureHeader.split(",")) {
+            String[] tokens = part.split("=", 2);
+            if (tokens.length == 2) {
+                values.put(tokens[0].trim(), tokens[1].trim());
+            }
+        }
+        return values;
+    }
+}
+

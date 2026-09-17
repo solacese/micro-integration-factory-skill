@@ -1,0 +1,132 @@
+package com.spec2event.generated.service;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.UUID;
+import java.util.stream.Stream;
+
+@Service
+public class SourcePollingService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(SourcePollingService.class);
+
+    private final CanonicalEventService canonicalEventService;
+    private final SolacePublisherService publisherService;
+    private final ObjectMapper objectMapper;
+    private final Path inputDirectory;
+    private final Path archiveDirectory;
+
+    @Value("${spec2event.source.maxFilesPerPoll:25}")
+    private int defaultBatchSize;
+
+    public SourcePollingService(
+            CanonicalEventService canonicalEventService,
+            SolacePublisherService publisherService,
+            ObjectMapper objectMapper,
+            @Value("${SOURCE_INPUT_DIRECTORY:./demo/inbox}") String inputDirectory,
+            @Value("${SOURCE_ARCHIVE_DIRECTORY:./demo/archive}") String archiveDirectory
+    ) {
+        this.canonicalEventService = canonicalEventService;
+        this.publisherService = publisherService;
+        this.objectMapper = objectMapper;
+        this.inputDirectory = Paths.get(inputDirectory);
+        this.archiveDirectory = Paths.get(archiveDirectory);
+    }
+
+    @Scheduled(fixedDelayString = "#{${spec2event.source.pollIntervalSeconds:60} * 1000}")
+    public void scheduledPoll() {
+        try {
+            PollResult result = pollOnce(defaultBatchSize, UUID.randomUUID().toString());
+            if (result.fileCount() > 0) {
+                LOGGER.info("Published {} files for {{ service_name }}.", result.fileCount());
+            }
+        } catch (Exception exc) {
+            LOGGER.warn("Scheduled polling failed for {{ service_name }}: {}", exc.getMessage());
+        }
+    }
+
+    public PollResult pollOnce(int requestedLimit, String correlationId) {
+        int limit = requestedLimit > 0 ? requestedLimit : defaultBatchSize;
+        if (!Files.exists(inputDirectory)) {
+            return new PollResult(0, List.of(), List.of());
+        }
+
+        try (Stream<Path> stream = Files.list(inputDirectory)) {
+            List<Path> candidates = stream
+                    .filter(Files::isRegularFile)
+                    .sorted()
+                    .limit(limit)
+                    .toList();
+            if (candidates.isEmpty()) {
+                return new PollResult(0, List.of(), List.of());
+            }
+
+            Set<String> uniqueTopics = new LinkedHashSet<>();
+            List<String> processedFiles = new ArrayList<>();
+            for (Path candidate : candidates) {
+                String content = Files.readString(candidate);
+                ObjectNode payload = objectMapper.createObjectNode();
+                payload.put("fileName", candidate.getFileName().toString());
+                payload.put("sourceMode", "{{ source_mode }}");
+                payload.put("receivedAt", Instant.now().toString());
+                payload.put("content", content);
+                payload.put("_bytes", Files.size(candidate));
+                uniqueTopics.addAll(
+                        publisherService.publish(
+                                canonicalEventService.planForOperation(
+                                        "{{ primary_operation.operationId }}",
+                                        payload
+                                ),
+                                payload,
+                                correlationId,
+                                "{{ primary_operation.operationId }}"
+                        )
+                );
+                processedFiles.add(candidate.getFileName().toString());
+                archive(candidate);
+            }
+            return new PollResult(
+                    processedFiles.size(),
+                    List.copyOf(uniqueTopics),
+                    processedFiles
+            );
+        } catch (IOException exc) {
+            throw new IllegalStateException("Unable to poll files from " + inputDirectory, exc);
+        }
+    }
+
+    public int defaultBatchSize() {
+        return defaultBatchSize;
+    }
+
+    private void archive(Path candidate) throws IOException {
+        Files.createDirectories(archiveDirectory);
+        Files.move(
+                candidate,
+                archiveDirectory.resolve(candidate.getFileName()),
+                StandardCopyOption.REPLACE_EXISTING
+        );
+    }
+
+    public record PollResult(
+            int fileCount,
+            List<String> publishedTopics,
+            List<String> processedFiles
+    ) {}
+}

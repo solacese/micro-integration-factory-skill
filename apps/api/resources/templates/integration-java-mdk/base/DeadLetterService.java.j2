@@ -1,0 +1,93 @@
+package com.spec2event.generated.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cloud.stream.function.StreamBridge;
+import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+/**
+ * Dead Letter Queue (DLQ) service for the {{ title }} micro-integration.
+ *
+ * Handles messages that have exhausted retry attempts:
+ * 1. Routes to DLQ destination with failure metadata
+ * 2. After parking-lot max attempts, routes to parking-lot destination
+ * 3. Emits metrics for monitoring failed message rates
+ *
+ * DLQ destinations follow the convention: {original-topic}/dlq
+ * Parking-lot destinations: {original-topic}/parking-lot
+ */
+@Service
+public class DeadLetterService {
+
+    private static final Logger log = LoggerFactory.getLogger(DeadLetterService.class);
+
+    private final StreamBridge streamBridge;
+
+    @Value("${parking-lot.enabled:true}")
+    private boolean parkingLotEnabled;
+
+    @Value("${parking-lot.max-dlq-attempts:3}")
+    private int maxDlqAttempts;
+
+    @Value("${parking-lot.destination-suffix:/parking-lot}")
+    private String parkingLotSuffix;
+
+    public DeadLetterService(StreamBridge streamBridge) {
+        this.streamBridge = streamBridge;
+    }
+
+    /**
+     * Route a failed message to the DLQ or parking-lot.
+     *
+     * @param payload       The original message payload
+     * @param correlationId The message correlation ID
+     * @param eventName     The canonical event name
+     * @param topic         The original topic/destination
+     * @param error         The failure reason
+     * @param attemptCount  Number of processing attempts so far
+     */
+    public void routeFailedMessage(
+            JsonNode payload,
+            String correlationId,
+            String eventName,
+            String topic,
+            String error,
+            int attemptCount
+    ) {
+        String destination;
+        if (parkingLotEnabled && attemptCount >= maxDlqAttempts) {
+            destination = topic + parkingLotSuffix;
+            log.warn("Parking message: correlationId={} event={} attempts={} destination={}",
+                    correlationId, eventName, attemptCount, destination);
+        } else {
+            destination = topic + "/dlq";
+            log.warn("DLQ routing: correlationId={} event={} attempts={} destination={}",
+                    correlationId, eventName, attemptCount, destination);
+        }
+
+        Map<String, Object> dlqEnvelope = new LinkedHashMap<>();
+        dlqEnvelope.put("originalTopic", topic);
+        dlqEnvelope.put("eventName", eventName);
+        dlqEnvelope.put("correlationId", correlationId);
+        dlqEnvelope.put("failedAt", Instant.now().toString());
+        dlqEnvelope.put("attemptCount", attemptCount);
+        dlqEnvelope.put("error", error);
+        dlqEnvelope.put("payload", payload);
+
+        streamBridge.send(
+                destination,
+                MessageBuilder.withPayload(dlqEnvelope)
+                        .setHeader("correlationId", correlationId)
+                        .setHeader("dlq.originalTopic", topic)
+                        .setHeader("dlq.attemptCount", attemptCount)
+                        .build()
+        );
+    }
+}

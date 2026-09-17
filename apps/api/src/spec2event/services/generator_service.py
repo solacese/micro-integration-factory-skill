@@ -8,6 +8,10 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader
 
 from spec2event.config import get_settings
+from spec2event.renderers import get_renderer
+from spec2event.services.schema_to_model_service import extract_models_from_canonical
+from spec2event.services.utils import camel as _camel
+from spec2event.transforms import get_transform_engine
 
 
 class GeneratorService:
@@ -19,6 +23,7 @@ class GeneratorService:
             trim_blocks=True,
             lstrip_blocks=True,
         )
+        self.jinja.filters["capitalize_first"] = lambda s: s[0].upper() + s[1:] if s else s
 
     def generate(
         self,
@@ -115,46 +120,91 @@ class GeneratorService:
             self._render("integration-java-mdk/base/application-runtime.yml.j2", context),
         )
 
-        # -- Ingress adapter (varies by source type) --
-        if ingress_type == "rest_controller":
+        # -- Streaming hardening (idempotency, DLQ, metrics, schema registry) --
+        streaming_config = canonical_model.get("streaming", {})
+        if streaming_config.get("enabled", False):
+            streaming_context = {**context, "streaming": streaming_config}
             self._write(
-                workspace
-                / "src/main/java/com/spec2event/generated/api/GeneratedApiController.java",
+                workspace / "config/application-streaming.yml",
                 self._render(
-                    "integration-java-mdk/base/GeneratedApiController.java.j2", context
+                    "integration-java-mdk/base/application-streaming.yml.j2",
+                    streaming_context,
                 ),
             )
-            if context.get("stripe_enabled"):
-                self._write(
-                    workspace
-                    / "src/main/java/com/spec2event/generated/api/StripeWebhookController.java",
-                    self._render(
-                        "integration-java-mdk/base/StripeWebhookController.java.j2", context
-                    ),
+            svc = "src/main/java/com/spec2event/generated/service"
+            self._write(
+                workspace / f"{svc}/IdempotencyService.java",
+                self._render(
+                    "integration-java-mdk/base/IdempotencyService.java.j2", context
+                ),
+            )
+            self._write(
+                workspace / f"{svc}/DeadLetterService.java",
+                self._render(
+                    "integration-java-mdk/base/DeadLetterService.java.j2", context
+                ),
+            )
+            self._write(
+                workspace / f"{svc}/StreamingMetricsService.java",
+                self._render(
+                    "integration-java-mdk/base/StreamingMetricsService.java.j2",
+                    context,
+                ),
+            )
+
+        # -- Ingress/egress adapters (resolved via renderer registry) --
+        direction = canonical_model.get("direction", "source")
+        target_pattern = canonical_model.get("targetPattern", "")
+
+        # Source-side rendering
+        if direction in ("source", "bidirectional"):
+            renderer = get_renderer(ingress_type, "source")
+            if renderer is not None:
+                for output in renderer.get_outputs(context):
+                    self._write(
+                        workspace / output.relative_path,
+                        self._render(output.template_name, context),
+                    )
+
+        # Target-side rendering
+        if direction in ("target", "bidirectional") and target_pattern:
+            target_renderer = get_renderer(target_pattern, "target")
+            if target_renderer is not None:
+                for output in target_renderer.get_outputs(context):
+                    self._write(
+                        workspace / output.relative_path,
+                        self._render(output.template_name, context),
+                    )
+
+        # -- Transform step (pluggable, between binders) --
+        transform_engine_id = canonical_model.get("transformEngine", "")
+        if transform_engine_id:
+            transform_spec = canonical_model.get("transformSpec", {})
+            engine = get_transform_engine(transform_engine_id)
+            if engine is not None:
+                # Merge engine-specific context additions
+                transform_context = {**context, **engine.get_context_additions(transform_spec)}
+                for output in engine.get_outputs(transform_context):
+                    self._write(
+                        workspace / output.relative_path,
+                        self._render(output.template_name, transform_context),
+                    )
+
+        # -- Typed model generation (optional, from schemas) --
+        if canonical_model.get("generateTypedModels", False):
+            models = extract_models_from_canonical(canonical_model)
+            for model in models:
+                model_context = {**context, **model}
+                rendered = self._render(
+                    "integration-java-mdk/base/GeneratedModel.java.j2",
+                    model_context,
                 )
-                self._write(
+                model_path = (
                     workspace
-                    / "src/main/java/com/spec2event/generated/service/StripeSignatureVerifier.java",
-                    self._render(
-                        "integration-java-mdk/base/StripeSignatureVerifier.java.j2", context
-                    ),
+                    / "src/main/java/com/spec2event/generated/model"
+                    / f"{model['model_name']}.java"
                 )
-        elif ingress_type == "polling_consumer":
-            self._write(
-                workspace
-                / "src/main/java/com/spec2event/generated/service/PollingConsumerService.java",
-                self._render(
-                    "integration-java-mdk/base/PollingConsumerService.java.j2", context
-                ),
-            )
-        elif ingress_type == "event_subscriber":
-            self._write(
-                workspace
-                / "src/main/java/com/spec2event/generated/service/EventSubscriberService.java",
-                self._render(
-                    "integration-java-mdk/base/EventSubscriberService.java.j2", context
-                ),
-            )
+                self._write(model_path, rendered)
 
         return workspace
 
@@ -222,6 +272,14 @@ class GeneratorService:
                 }
             )
 
+        # Determine target binder type from renderer registry if available
+        target_pattern = canonical_model.get("targetPattern", "")
+        target_binder_type = "rest"
+        if target_pattern:
+            target_renderer = get_renderer(target_pattern, "target")
+            if target_renderer is not None:
+                target_binder_type = target_renderer.binder_type
+
         return {
             "title": canonical_model["title"],
             "service_name": canonical_model["serviceName"],
@@ -232,7 +290,9 @@ class GeneratorService:
             "operations": operations,
             "workflows": workflows,
             "source_binder_type": source_binder_type,
+            "target_binder_type": target_binder_type,
             "ingress_type": ingress_type,
+            "direction": canonical_model.get("direction", "source"),
             "stripe_enabled": canonical_model["stripeEnabled"],
             "ui_metadata": {
                 "serviceName": canonical_model["serviceName"],
@@ -249,20 +309,19 @@ class GeneratorService:
 
 
 def _source_binder_type(ingress_type: str) -> str:
-    """Map ingress type to the Spring Cloud Stream binder type name."""
+    """Map ingress type to the Spring Cloud Stream binder type name.
+
+    First checks the renderer registry for the binder type, then falls back
+    to a static map for backward compat.
+    """
+    renderer = get_renderer(ingress_type, "source")
+    if renderer is not None:
+        return renderer.binder_type
     return {
         "rest_controller": "solace",
         "polling_consumer": "polling",
         "event_subscriber": "external",
     }.get(ingress_type, "solace")
-
-
-def _camel(value: str) -> str:
-    cleaned = "".join(ch if ch.isalnum() else " " for ch in value).split()
-    if not cleaned:
-        return "generatedBinding"
-    head, *tail = cleaned
-    return head[:1].lower() + head[1:] + "".join(part[:1].upper() + part[1:] for part in tail)
 
 
 generator_service = GeneratorService()

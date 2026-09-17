@@ -1,0 +1,52 @@
+package com.spec2event.generated.api;
+
+import com.spec2event.generated.service.DatabasePollingService;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/internal/database")
+public class DatabasePollingController {
+
+    private final DatabasePollingService pollingService;
+
+    public DatabasePollingController(DatabasePollingService pollingService) {
+        this.pollingService = pollingService;
+    }
+
+    @PostMapping("/poll-now")
+    public ResponseEntity<Map<String, Object>> pollNow(
+            @RequestBody(required = false) ManualPollRequest request,
+            @RequestHeader Map<String, String> headers
+    ) {
+        int requestedLimit = request != null && request.limit() != null
+                ? request.limit()
+                : pollingService.defaultBatchSize();
+        String correlationId = headers.getOrDefault("x-correlation-id", UUID.randomUUID().toString());
+        DatabasePollingService.PollResult result = pollingService.pollOnce(requestedLimit, correlationId);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", "accepted");
+        response.put("operationId", "{{ database_operation.operationId }}");
+        response.put("summary", "{{ database_operation.summary|replace('\"', '\\\"') }}");
+        response.put("correlationId", correlationId);
+        response.put("publishedTopics", result.publishedTopics());
+        response.put("rowCount", result.rowCount());
+        response.put("watermark", result.watermark());
+        response.put("moreAvailable", result.moreAvailable());
+        response.put("mode", result.mode());
+        response.put("receivedAt", Instant.now().toString());
+        return ResponseEntity.ok(response);
+    }
+
+    public record ManualPollRequest(Integer limit) {}
+}

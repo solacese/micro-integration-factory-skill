@@ -1,0 +1,82 @@
+package com.spec2event.generated.service;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.stereotype.Service;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Idempotency service for the {{ title }} micro-integration.
+ *
+ * Prevents duplicate message processing by tracking correlation IDs.
+ * Default implementation uses an in-memory store with TTL expiry.
+ * For production, configure an external store (Redis, database) via
+ * the IDEMPOTENCY_STORE environment variable.
+ *
+ * Usage:
+ *   if (idempotencyService.isDuplicate(correlationId)) { return; }
+ *   // ... process message ...
+ *   idempotencyService.markProcessed(correlationId);
+ */
+@Service
+public class IdempotencyService {
+
+    private static final Logger log = LoggerFactory.getLogger(IdempotencyService.class);
+
+    private final Map<String, Instant> processedIds = new ConcurrentHashMap<>();
+
+    @Value("${idempotency.enabled:true}")
+    private boolean enabled;
+
+    @Value("${idempotency.ttl-seconds:86400}")
+    private long ttlSeconds;
+
+    /**
+     * Check if a message with this correlation ID has already been processed.
+     *
+     * @param correlationId The unique message correlation ID
+     * @return true if this message is a duplicate and should be skipped
+     */
+    public boolean isDuplicate(String correlationId) {
+        if (!enabled || correlationId == null || correlationId.isEmpty()) {
+            return false;
+        }
+        Instant processedAt = processedIds.get(correlationId);
+        if (processedAt == null) {
+            return false;
+        }
+        // Check TTL expiry
+        if (Duration.between(processedAt, Instant.now()).getSeconds() > ttlSeconds) {
+            processedIds.remove(correlationId);
+            return false;
+        }
+        log.debug("Duplicate detected: correlationId={}", correlationId);
+        return true;
+    }
+
+    /**
+     * Mark a message as successfully processed.
+     *
+     * @param correlationId The unique message correlation ID
+     */
+    public void markProcessed(String correlationId) {
+        if (!enabled || correlationId == null || correlationId.isEmpty()) {
+            return;
+        }
+        processedIds.put(correlationId, Instant.now());
+        log.debug("Marked processed: correlationId={}", correlationId);
+    }
+
+    /**
+     * Periodic cleanup of expired entries (call from a scheduled task).
+     */
+    public void evictExpired() {
+        Instant cutoff = Instant.now().minusSeconds(ttlSeconds);
+        processedIds.entrySet().removeIf(entry -> entry.getValue().isBefore(cutoff));
+    }
+}

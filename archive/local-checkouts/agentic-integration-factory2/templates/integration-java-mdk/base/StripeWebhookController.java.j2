@@ -1,0 +1,65 @@
+package com.spec2event.generated.api;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.spec2event.generated.service.CanonicalEventService;
+import com.spec2event.generated.service.SolacePublisherService;
+import com.spec2event.generated.service.StripeSignatureVerifier;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@RestController
+@RequestMapping("/webhooks/stripe")
+public class StripeWebhookController {
+
+    private final CanonicalEventService canonicalEventService;
+    private final SolacePublisherService publisherService;
+    private final StripeSignatureVerifier stripeSignatureVerifier;
+    private final ObjectMapper objectMapper;
+
+    public StripeWebhookController(
+            CanonicalEventService canonicalEventService,
+            SolacePublisherService publisherService,
+            StripeSignatureVerifier stripeSignatureVerifier,
+            ObjectMapper objectMapper
+    ) {
+        this.canonicalEventService = canonicalEventService;
+        this.publisherService = publisherService;
+        this.stripeSignatureVerifier = stripeSignatureVerifier;
+        this.objectMapper = objectMapper;
+    }
+
+    @PostMapping("/payment")
+    public ResponseEntity<Map<String, Object>> handleStripePayment(
+            @RequestBody String rawBody,
+            @RequestHeader(value = "Stripe-Signature", required = false) String stripeSignature,
+            @RequestHeader Map<String, String> headers
+    ) throws Exception {
+        if (!stripeSignatureVerifier.isValid(rawBody, stripeSignature)) {
+            return ResponseEntity.badRequest().body(Map.of("status", "signature_invalid"));
+        }
+        JsonNode payload = objectMapper.readTree(rawBody);
+        String correlationId = headers.getOrDefault("x-correlation-id", UUID.randomUUID().toString());
+        List<CanonicalEventService.EventBlueprint> blueprints = canonicalEventService.planForOperation("stripe-webhook-payment", payload);
+        List<String> publishedTopics = publisherService.publish(blueprints, payload, correlationId, "stripe-webhook-payment");
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("status", "accepted");
+        response.put("operationId", "stripe-webhook-payment");
+        response.put("correlationId", correlationId);
+        response.put("publishedTopics", publishedTopics);
+        response.put("eventCount", publishedTopics.size());
+        response.put("receivedAt", Instant.now().toString());
+        return ResponseEntity.ok(response);
+    }
+}
+

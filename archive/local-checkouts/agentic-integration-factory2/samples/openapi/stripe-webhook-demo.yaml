@@ -1,0 +1,106 @@
+openapi: 3.0.3
+info:
+  title: Stripe Payments Gateway
+  version: 1.0.0
+servers:
+  - url: https://demo.spec2event.local
+paths:
+  /webhooks/stripe/payment:
+    post:
+      operationId: stripe-webhook-payment
+      summary: Receive Stripe payment webhook
+      tags:
+        - payments
+        - stripe
+        - webhook
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StripeWebhookEvent"
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcceptedResponse"
+  /payments/intents:
+    post:
+      operationId: create-payment-intent
+      summary: Create payment intent
+      tags:
+        - payments
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreatePaymentIntentRequest"
+      responses:
+        "200":
+          description: Accepted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AcceptedResponse"
+  /payments/intents/{paymentIntentId}:
+    get:
+      operationId: get-payment-intent
+      summary: Get payment intent
+      tags:
+        - payments
+      parameters:
+        - name: paymentIntentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Current payment intent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PaymentIntent"
+components:
+  schemas:
+    StripeWebhookEvent:
+      type: object
+      required: [id, type, data]
+      properties:
+        id:
+          type: string
+        type:
+          type: string
+        data:
+          type: object
+          additionalProperties: true
+    CreatePaymentIntentRequest:
+      type: object
+      required: [customerId, amount, currency]
+      properties:
+        customerId:
+          type: string
+        amount:
+          type: integer
+        currency:
+          type: string
+    PaymentIntent:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        amount:
+          type: integer
+    AcceptedResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        correlationId:
+          type: string
+

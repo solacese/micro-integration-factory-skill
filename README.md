@@ -19,17 +19,41 @@ It turns **any source** — OpenAPI specs, JSON Schemas, database credentials, o
 - **Full lifecycle** — generation, build, deploy, test, Event Portal sync, and AI refinement in one pipeline
 - **Agent-native** — comes with a skill definition and lifecycle runbook for autonomous operation
 
-## Supported Source Types
+## Connector Matrix
 
-| Source Type | Input | Ingress Pattern |
-|-------------|-------|-----------------|
-| **OpenAPI** | YAML/JSON spec | REST controller |
-| **JSON Schema** | `.schema.json` file | REST controller (synthetic CRUD) |
-| **Database** | Connection credentials | Polling consumer |
-| **MQTT / Kafka** | Broker config | Event subscriber |
-| **Custom** | Any structured input | Implement `SourceAdapter` |
+| Connector | Direction | Input Format | Ingress Pattern | Streaming |
+|-----------|-----------|-------------|-----------------|-----------|
+| **OpenAPI** | Source | YAML/JSON spec | REST controller | - |
+| **JSON Schema** | Source | `.schema.json` file | REST controller (CRUD) | - |
+| **Database (CDC)** | Source | Connection spec JSON | Event subscriber | Yes (log-based CDC) |
+| **Kafka** | Source | Broker spec JSON | Event subscriber | Yes (partitioned) |
+| **Webhook** | Source | Endpoint spec JSON | REST controller | - |
+| **REST Sink** | Target | Canonical model | Solace consumer | - |
+| **Generic Target** | Target | Canonical model | Solace consumer | - |
+| **Integration Spec** | Both | Declarative JSON | Auto-detected | Configurable |
 
-Adding a new source type requires implementing three methods (`parse`, `summarize`, `canonicalize`) in a `SourceAdapter` subclass. The pipeline, generator, build, deploy, and governance layers need zero changes.
+### Transform Engines
+
+| Engine | Description | Artifacts Generated |
+|--------|-------------|-------------------|
+| **Passthrough** | No transformation (default) | `PassthroughTransform.java` |
+| **Field Mapping** | Declarative rename/select/flatten | `FieldMappingTransform.java` |
+| **JOLT** | JSON-to-JSON transformation | `JoltTransform.java` + `jolt-spec.json` |
+| **DataWeave** | MuleSoft DataWeave language | `DataWeaveTransform.java` + `transform.dwl` |
+| **Scripting** | JavaScript/Groovy/SpEL | `ScriptTransform.java` + `transform-script.js` |
+| **Custom Java** | User-implemented Function bean | `CustomTransform.java` |
+
+### Adding a New Connector or Transform
+
+```bash
+# Scaffold a new connector
+make new-connector NAME=mqtt DIRECTION=source
+
+# Scaffold a new transform engine
+make new-transform NAME=xml_to_json
+```
+
+Adding a new source type requires implementing three methods (`parse`, `summarize`, `canonicalize`) in a `SourceAdapter` subclass. Adding a renderer or transform requires no edits to the generator or pipeline; they are registry-driven.
 
 ## Start Here
 
@@ -105,9 +129,13 @@ The helper script copies one of those env bundles into the active root `.env`.
 
 ## Sample Inputs
 
-- [petstore.yaml](apps/api/resources/samples/openapi/petstore.yaml) — simple Petstore API
-- [stripe-webhook-demo.yaml](apps/api/resources/samples/openapi/stripe-webhook-demo.yaml) — Stripe webhook integration
-- [order.schema.json](apps/api/resources/samples/json_schema/order.schema.json) — e-commerce order schema
+- [petstore.yaml](apps/api/resources/samples/openapi/petstore.yaml) - simple Petstore API
+- [stripe-webhook-demo.yaml](apps/api/resources/samples/openapi/stripe-webhook-demo.yaml) - Stripe webhook integration
+- [order.schema.json](apps/api/resources/samples/json_schema/order.schema.json) - e-commerce order schema
+- [orders-cdc.json](apps/api/resources/samples/database/orders-cdc.json) - PostgreSQL CDC source
+- [order-events.json](apps/api/resources/samples/kafka/order-events.json) - Kafka streaming source
+- [payment-webhooks.json](apps/api/resources/samples/webhook/payment-webhooks.json) - generic webhook source
+- [kafka-to-rest.json](apps/api/resources/samples/integration_spec/kafka-to-rest.json) - declarative integration spec (bidirectional)
 
 ## Main Folders
 

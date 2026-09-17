@@ -1,0 +1,27 @@
+package com.spec2event.generated.transform;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.stereotype.Component;
+
+import java.util.function.Function;
+
+/**
+ * Custom Java transform for the {{ title }} micro-integration.
+ *
+ * Implement your custom transformation logic in the apply() method.
+ * This class is wired as a Spring Cloud Stream Function bean for
+ * use in the workflow pipeline.
+ */
+@Component("messageTransform")
+public class CustomTransform implements Function<JsonNode, JsonNode> {
+
+    @Override
+    public JsonNode apply(JsonNode input) {
+        // TODO: Implement custom transformation logic
+        // Example:
+        //   ObjectNode output = ((ObjectNode) input).deepCopy();
+        //   output.put("processedAt", Instant.now().toString());
+        //   return output;
+        return input;
+    }
+}

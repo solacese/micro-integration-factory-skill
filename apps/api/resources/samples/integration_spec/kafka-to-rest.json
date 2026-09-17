@@ -1,0 +1,22 @@
+{
+  "name": "Order Notifications",
+  "input_system": "kafka",
+  "output_system": "rest",
+  "direction": "bidirectional",
+  "delivery_model": "stream",
+  "transform": "field_mapping",
+  "transform_config": {
+    "config": {
+      "mappings": [
+        {"source": "order_id", "target": "orderId"},
+        {"source": "customer_email", "target": "email"},
+        {"source": "total_amount", "target": "amount"}
+      ]
+    }
+  },
+  "events": [
+    "order-placed",
+    "order-shipped",
+    "order-delivered"
+  ]
+}

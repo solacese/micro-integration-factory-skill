@@ -1,0 +1,29 @@
+{
+  "name": "@spec2event/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@spec2event/shared": "file:../../packages/shared",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.553.0",
+    "next": "16.1.7",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "eslint": "^9.39.1",
+    "eslint-config-next": "16.1.7",
+    "typescript": "^5.9.3"
+  }
+}
+

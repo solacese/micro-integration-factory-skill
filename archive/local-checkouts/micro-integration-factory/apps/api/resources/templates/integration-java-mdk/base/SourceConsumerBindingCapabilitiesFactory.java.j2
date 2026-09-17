@@ -1,0 +1,42 @@
+package com.spec2event.generated.binding;
+
+import com.solace.connector.core.io.provider.ConsumerBindingCapabilities;
+import com.solace.connector.core.io.provider.ConsumerBindingCapabilitiesFactory;
+import org.springframework.cloud.stream.binder.ConsumerProperties;
+
+/**
+ * Consumer binding capabilities factory for the {{ source_binder_type }} binder.
+ *
+ * Declares how the source-side consumer bindings acknowledge messages within
+ * the Solace MDK connector framework.
+ */
+public class SourceConsumerBindingCapabilitiesFactory implements ConsumerBindingCapabilitiesFactory {
+
+    @Override
+    public String getBinderType() {
+        return "{{ source_binder_type }}";
+    }
+
+    @Override
+    public ConsumerBindingCapabilities create(ConsumerProperties consumerProperties) {
+        return new SourceConsumerBindingCapabilities(consumerProperties.getBindingName());
+    }
+
+    private static class SourceConsumerBindingCapabilities implements ConsumerBindingCapabilities {
+        private final String bindingName;
+
+        private SourceConsumerBindingCapabilities(String bindingName) {
+            this.bindingName = bindingName;
+        }
+
+        @Override
+        public String getBindingName() {
+            return bindingName;
+        }
+
+        @Override
+        public ConsumerAckMode getAcknowledgmentMode() {
+            return ConsumerAckMode.CLIENT_ACK_BY_CALLBACK_HEADER;
+        }
+    }
+}

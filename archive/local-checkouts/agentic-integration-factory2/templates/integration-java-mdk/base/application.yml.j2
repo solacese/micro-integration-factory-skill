@@ -1,0 +1,73 @@
+server:
+  port: 8080
+
+spring:
+  autoconfigure:
+    exclude:
+      - com.solace.connector.core.config.ErrorAutoConfiguration
+      - com.solace.connector.core.config.EventListenerAutoConfiguration
+      - com.solace.connector.core.config.ExtendedBindingServiceAutoConfiguration
+      - com.solace.connector.core.config.JCSMPCompatibilityAutoConfiguration
+      - com.solace.connector.core.config.WorkflowAutoConfiguration
+      - com.solace.connector.core.config.ConfigurationValidationAutoConfiguration
+      - com.solace.connector.core.config.LifecycleAutoConfiguration
+      - com.solace.connector.core.config.MeterAutoConfiguration
+      - com.solace.connector.core.config.SecurityAutoConfiguration
+      - com.solace.connector.core.config.SolaceCloudAutoConfiguration
+      - com.solace.connector.core.config.WorkflowsHealthIndicatorAutoConfiguration
+      - org.springframework.boot.actuate.autoconfigure.security.servlet.ManagementWebSecurityAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
+  config:
+    import: "optional:configserver:"
+  application:
+    name: {{ application_name }}
+  cloud:
+    config:
+      enabled: false
+      import-check:
+        enabled: false
+    stream:
+      default-binder: solace
+      output-bindings: "{% for binding in event_bindings %}{{ binding.bindingName }}{% if not loop.last %};{% endif %}{% endfor %}"
+      binders:
+        solace:
+          type: solace
+          environment:
+            solace:
+              java:
+                host: ${SOLACE_BROKER_URL:}
+                msgVpn: ${SOLACE_VPN:}
+                clientUsername: ${SOLACE_USERNAME:}
+                clientPassword: ${SOLACE_PASSWORD:}
+      bindings:
+{% for binding in event_bindings %}
+        {{ binding.bindingName }}:
+          destination: {{ binding.topicName }}
+          content-type: application/json
+{% endfor %}
+
+management:
+  defaults:
+    metrics:
+      export:
+        enabled: false
+  datadog:
+    metrics:
+      export:
+        enabled: false
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+logging:
+  level:
+    root: INFO
+
+spec2event:
+  workflows:
+{% for binding in event_bindings %}
+    - operationId: {{ binding.operationId }}
+      bindingName: {{ binding.bindingName }}
+      topicName: {{ binding.topicName }}
+{% endfor %}

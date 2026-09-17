@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE_URL="${1:-http://localhost:8080}"
+
+{% for operation in operations[:3] %}
+curl -X {{ operation.method }} "${BASE_URL}{{ operation.path }}" \
+  -H "Content-Type: application/json" \
+  -d '{"demo":"payload"}'
+
+{% endfor %}
+curl -X POST "${BASE_URL}/webhooks/stripe/payment" \
+  -H "Content-Type: application/json" \
+  -d '{"id":"evt_demo","type":"payment_intent.succeeded","data":{"object":{"id":"pi_demo","amount":1299}}}'
+

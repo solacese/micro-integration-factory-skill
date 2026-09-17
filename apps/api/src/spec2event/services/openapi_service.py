@@ -1,30 +1,17 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 import jsonref
 import yaml
 from openapi_spec_validator import validate
 
-
-def _safe_slug(text: str) -> str:
-    value = re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
-    return value or "generated-service"
-
-
-def _pascal(text: str) -> str:
-    parts = re.split(r"[^a-zA-Z0-9]+", text)
-    return "".join(part[:1].upper() + part[1:] for part in parts if part)
-
-
-def _singularize(value: str) -> str:
-    if value.endswith("ies"):
-        return value[:-3] + "y"
-    if value.endswith("s") and not value.endswith("ss"):
-        return value[:-1]
-    return value
+from spec2event.services.utils import example_from_schema
+from spec2event.services.utils import pascal as _pascal
+from spec2event.services.utils import safe_slug as _safe_slug
+from spec2event.services.utils import singularize as _singularize
+from spec2event.services.webhook_vendors import detect_vendor
 
 
 def _schema_name(schema: dict[str, Any] | None, fallback: str) -> str | None:
@@ -39,45 +26,7 @@ def _schema_name(schema: dict[str, Any] | None, fallback: str) -> str | None:
     return _pascal(fallback)
 
 
-def _example_from_schema(schema: dict[str, Any] | None, depth: int = 0) -> Any:
-    if not schema or depth > 4:
-        return None
-    if "example" in schema:
-        return schema["example"]
-    if "default" in schema:
-        return schema["default"]
-    if "enum" in schema and schema["enum"]:
-        return schema["enum"][0]
-    schema_type = schema.get("type")
-    if schema_type == "object" or schema.get("properties"):
-        properties = schema.get("properties") or {}
-        return {
-            key: _example_from_schema(value, depth + 1)
-            for key, value in properties.items()
-        }
-    if schema_type == "array":
-        item_example = _example_from_schema(schema.get("items"), depth + 1)
-        return [] if item_example is None else [item_example]
-    if schema_type == "integer":
-        return 1
-    if schema_type == "number":
-        return 1.0
-    if schema_type == "boolean":
-        return True
-    if schema_type == "string":
-        format_hint = schema.get("format")
-        if format_hint == "date-time":
-            return "2026-01-01T00:00:00Z"
-        if format_hint == "date":
-            return "2026-01-01"
-        if format_hint == "uuid":
-            return "00000000-0000-0000-0000-000000000000"
-        return schema.get("title") or "string"
-    if "oneOf" in schema and schema["oneOf"]:
-        return _example_from_schema(schema["oneOf"][0], depth + 1)
-    if "anyOf" in schema and schema["anyOf"]:
-        return _example_from_schema(schema["anyOf"][0], depth + 1)
-    return None
+_example_from_schema = example_from_schema
 
 
 def _parameter_example(parameter: dict[str, Any]) -> str:
@@ -137,9 +86,8 @@ def _infer_domain(tags: list[str], path_segments: list[str], service_name: str) 
 
 
 def _infer_source(path: str, tags: list[str], service_name: str) -> str:
-    joined = " ".join([path, *tags, service_name]).lower()
-    if "stripe" in joined:
-        return "stripe"
+    # Vendor detection is now handled at the spec level via detect_vendor().
+    # This function returns the service name as the source identifier.
     return service_name
 
 
@@ -150,10 +98,20 @@ def _infer_entity(path_segments: list[str], service_name: str) -> str:
     return service_name
 
 
-def _infer_action(method: str, operation_id: str, summary: str, source: str, entity: str) -> str:
+def _infer_action(
+    method: str,
+    operation_id: str,
+    summary: str,
+    source: str,
+    entity: str,
+    vendor_pack=None,
+) -> str:
+    # Delegate to vendor pack for vendor-specific action inference
+    if vendor_pack is not None:
+        vendor_action = vendor_pack.infer_action(method, operation_id, summary, entity)
+        if vendor_action is not None:
+            return vendor_action
     text = f"{operation_id} {summary}".lower()
-    if source == "stripe" and "refund" in text:
-        return "refunded"
     if "success" in text or "succeeded" in text:
         return "succeeded"
     if "fail" in text:
@@ -174,29 +132,11 @@ def _emit_business_event(method: str, tags: list[str], path: str) -> bool:
     return method.lower() in {"post", "put", "patch"} or "webhook" in lowered
 
 
-def _stripe_event_candidates(
-    domain: str, source: str, application_name: str
+def _vendor_event_candidates(
+    domain: str, application_name: str, vendor_pack
 ) -> list[dict[str, str]]:
-    return [
-        {
-            "canonicalEventName": "StripePaymentIntentSucceeded",
-            "topicName": f"{domain}/{source}/payment_intent/succeeded/v1",
-            "schemaName": "StripePaymentIntentSucceededPayload",
-            "applicationName": application_name,
-        },
-        {
-            "canonicalEventName": "StripePaymentIntentFailed",
-            "topicName": f"{domain}/{source}/payment_intent/failed/v1",
-            "schemaName": "StripePaymentIntentFailedPayload",
-            "applicationName": application_name,
-        },
-        {
-            "canonicalEventName": "StripeChargeRefunded",
-            "topicName": f"{domain}/{source}/charge/refunded/v1",
-            "schemaName": "StripeChargeRefundedPayload",
-            "applicationName": application_name,
-        },
-    ]
+    """Delegate event candidate synthesis to the detected vendor event pack."""
+    return vendor_pack.event_candidates(domain, application_name)
 
 
 def summarize_openapi(doc: dict[str, Any]) -> dict[str, Any]:
@@ -241,11 +181,23 @@ def canonicalize_openapi(doc: dict[str, Any]) -> dict[str, Any]:
     topics: set[str] = set()
     schema_names: set[str] = set()
     application_names: set[str] = set()
-    stripe_enabled = False
     test_fixtures: list[dict[str, Any]] = []
 
+    # Detect webhook vendor at spec level (generic, not hardcoded)
+    all_paths = list(doc.get("paths", {}).keys())
+    all_tags: list[str] = []
+    for path_item in doc.get("paths", {}).values():
+        for method_key in ["get", "post", "put", "patch", "delete"]:
+            op = path_item.get(method_key)
+            if op:
+                all_tags.extend(op.get("tags", []))
+    vendor_pack = detect_vendor(title, all_paths, all_tags)
+    vendor_enabled = vendor_pack is not None
+
     for path, path_item in doc.get("paths", {}).items():
-        path_segments = [segment for segment in path.strip("/").split("/") if segment]
+        path_segments = [
+            segment for segment in path.strip("/").split("/") if segment
+        ]
         for method in ["get", "post", "put", "patch", "delete", "head", "options"]:
             if method not in path_item:
                 continue
@@ -254,34 +206,48 @@ def canonicalize_openapi(doc: dict[str, Any]) -> dict[str, Any]:
                 *(path_item.get("parameters") or []),
                 *(operation.get("parameters") or []),
             ]
-            operation_id = operation.get("operationId") or _safe_slug(f"{method}-{path}")
-            summary = operation.get("summary") or operation.get("description") or operation_id
+            operation_id = (
+                operation.get("operationId") or _safe_slug(f"{method}-{path}")
+            )
+            summary = (
+                operation.get("summary")
+                or operation.get("description")
+                or operation_id
+            )
             tags = operation.get("tags", [])
-            request_schema = _extract_schema((operation.get("requestBody") or {}).get("content"))
+            request_schema = _extract_schema(
+                (operation.get("requestBody") or {}).get("content")
+            )
             responses = operation.get("responses", {})
             response_schema = None
             for code, response in responses.items():
                 if str(code).startswith("2"):
-                    response_schema = _extract_schema((response or {}).get("content"))
+                    response_schema = _extract_schema(
+                        (response or {}).get("content")
+                    )
                     if response_schema:
                         break
 
             domain = _infer_domain(tags, path_segments, service_name)
             source = _infer_source(path, tags, service_name)
             entity = _infer_entity(path_segments, service_name)
-            action = _infer_action(method, operation_id, summary, source, entity)
+            action = _infer_action(
+                method, operation_id, summary, source, entity,
+                vendor_pack=vendor_pack,
+            )
             emits_event = _emit_business_event(method, tags, path)
             application_name = f"{service_name}-integration"
 
             event_candidates: list[dict[str, Any]] = []
-            if "stripe" in source or "stripe" in path.lower():
-                stripe_enabled = True
+            if vendor_pack is not None and vendor_pack.detect(
+                path, [path], tags
+            ):
                 event_candidates = [
                     {**candidate, "operationId": operation_id, "emitsEvent": True}
-                    for candidate in _stripe_event_candidates(
+                    for candidate in _vendor_event_candidates(
                         domain or "payments",
-                        "stripe",
                         application_name,
+                        vendor_pack,
                     )
                 ]
             elif emits_event:
@@ -304,8 +270,12 @@ def canonicalize_openapi(doc: dict[str, Any]) -> dict[str, Any]:
                 schema_names.add(event_candidate["schemaName"])
                 application_names.add(event_candidate["applicationName"])
 
-            request_schema_name = _schema_name(request_schema, f"{operation_id}Request")
-            response_schema_name = _schema_name(response_schema, f"{operation_id}Response")
+            request_schema_name = _schema_name(
+                request_schema, f"{operation_id}Request"
+            )
+            response_schema_name = _schema_name(
+                response_schema, f"{operation_id}Response"
+            )
             if request_schema_name:
                 schema_names.add(request_schema_name)
             if response_schema_name:
@@ -346,7 +316,9 @@ def canonicalize_openapi(doc: dict[str, Any]) -> dict[str, Any]:
         "operations": operations,
         "topics": sorted(topics),
         "schemaNames": sorted(schema_names),
-        "applicationNames": sorted(application_names or {f"{service_name}-integration"}),
-        "stripeEnabled": stripe_enabled,
+        "applicationNames": sorted(
+            application_names or {f"{service_name}-integration"}
+        ),
+        "stripeEnabled": vendor_enabled,
         "testFixtures": test_fixtures,
     }

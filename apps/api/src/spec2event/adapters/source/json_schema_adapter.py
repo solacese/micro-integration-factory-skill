@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from spec2event.adapters.source.base import (
@@ -10,56 +9,18 @@ from spec2event.adapters.source.base import (
     SourceParseResult,
     SourceSummary,
 )
-
-
-def _safe_slug(text: str) -> str:
-    value = re.sub(r"[^a-zA-Z0-9]+", "-", text).strip("-").lower()
-    return value or "generated-service"
-
-
-def _pascal(text: str) -> str:
-    parts = re.split(r"[^a-zA-Z0-9]+", text)
-    return "".join(part[:1].upper() + part[1:] for part in parts if part)
-
-
-def _example_from_schema(schema: dict[str, Any] | None, depth: int = 0) -> Any:
-    if not schema or depth > 4:
-        return None
-    if "example" in schema:
-        return schema["example"]
-    if "default" in schema:
-        return schema["default"]
-    if "enum" in schema and schema["enum"]:
-        return schema["enum"][0]
-    schema_type = schema.get("type")
-    if schema_type == "object" or schema.get("properties"):
-        properties = schema.get("properties") or {}
-        return {key: _example_from_schema(value, depth + 1) for key, value in properties.items()}
-    if schema_type == "array":
-        item_example = _example_from_schema(schema.get("items"), depth + 1)
-        return [] if item_example is None else [item_example]
-    if schema_type == "integer":
-        return 1
-    if schema_type == "number":
-        return 1.0
-    if schema_type == "boolean":
-        return True
-    if schema_type == "string":
-        fmt = schema.get("format")
-        if fmt == "date-time":
-            return "2026-01-01T00:00:00Z"
-        if fmt == "uuid":
-            return "00000000-0000-0000-0000-000000000000"
-        return schema.get("title") or "string"
-    return None
-
-
-def _singularize(value: str) -> str:
-    if value.endswith("ies"):
-        return value[:-3] + "y"
-    if value.endswith("s") and not value.endswith("ss"):
-        return value[:-1]
-    return value
+from spec2event.services.utils import (
+    example_from_schema as _example_from_schema,
+)
+from spec2event.services.utils import (
+    pascal as _pascal,
+)
+from spec2event.services.utils import (
+    safe_slug as _safe_slug,
+)
+from spec2event.services.utils import (
+    singularize as _singularize,
+)
 
 
 def _entities_from_schema(doc: dict[str, Any]) -> list[dict[str, Any]]:

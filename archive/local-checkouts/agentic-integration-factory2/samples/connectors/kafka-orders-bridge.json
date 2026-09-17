@@ -1,0 +1,25 @@
+{
+  "sourceMode": "kafka",
+  "name": "Orders Topic Bridge",
+  "version": "1.0.0",
+  "description": "Bridge upstream Kafka orders into Solace canonical order events.",
+  "applicationDomainName": "Commerce Source Integrations",
+  "topicRoot": "commerce",
+  "sourceDetails": {
+    "stream": "orders.events",
+    "consumerGroup": "solace-orders-bridge",
+    "clientId": "orders-bridge"
+  },
+  "events": [
+    {
+      "name": "OrderCreated",
+      "entity": "order",
+      "action": "created",
+      "payloadExample": {
+        "orderId": "ord_789",
+        "customerId": "cus_001",
+        "total": 199.5
+      }
+    }
+  ]
+}

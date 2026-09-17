@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ service_name }}-integration
+spec:
+  replicas: {{ "{{" }} .Values.replicaCount {{ "}}" }}
+  minReadySeconds: {{ "{{" }} .Values.deployment.minReadySeconds {{ "}}" }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: {{ "{{" }} .Values.deployment.maxUnavailable {{ "}}" }}
+      maxSurge: {{ "{{" }} .Values.deployment.maxSurge {{ "}}" }}
+  selector:
+    matchLabels:
+      app: {{ service_name }}-integration
+  template:
+    metadata:
+      labels:
+        app: {{ service_name }}-integration
+    spec:
+      containers:
+        - name: {{ service_name }}-integration
+          image: "{{ "{{" }} .Values.image.repository {{ "}}" }}:{{ "{{" }} .Values.image.tag {{ "}}" }}"
+          imagePullPolicy: {{ "{{" }} .Values.image.pullPolicy {{ "}}" }}
+          securityContext:
+{{ "{{" }}- toYaml .Values.containerSecurityContext | nindent 12 {{ "}}" }}
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: SOLACE_BROKER_URL
+              value: {{ "{{" }} .Values.env.SOLACE_BROKER_URL | quote {{ "}}" }}
+            - name: SOLACE_VPN
+              value: {{ "{{" }} .Values.env.SOLACE_VPN | quote {{ "}}" }}
+            - name: SOLACE_USERNAME
+              value: {{ "{{" }} .Values.env.SOLACE_USERNAME | quote {{ "}}" }}
+            - name: SOLACE_PASSWORD
+              value: {{ "{{" }} .Values.env.SOLACE_PASSWORD | quote {{ "}}" }}
+            - name: STRIPE_WEBHOOK_SECRET
+              value: {{ "{{" }} .Values.env.STRIPE_WEBHOOK_SECRET | quote {{ "}}" }}
+          readinessProbe:
+            httpGet:
+              path: {{ "{{" }} .Values.probes.path {{ "}}" }}
+              port: http
+            initialDelaySeconds: {{ "{{" }} .Values.probes.initialDelaySeconds {{ "}}" }}
+            periodSeconds: {{ "{{" }} .Values.probes.periodSeconds {{ "}}" }}
+            timeoutSeconds: {{ "{{" }} .Values.probes.timeoutSeconds {{ "}}" }}
+            failureThreshold: {{ "{{" }} .Values.probes.failureThreshold {{ "}}" }}
+          livenessProbe:
+            httpGet:
+              path: {{ "{{" }} .Values.probes.path {{ "}}" }}
+              port: http
+            initialDelaySeconds: {{ "{{" }} .Values.probes.initialDelaySeconds {{ "}}" }}
+            periodSeconds: {{ "{{" }} .Values.probes.periodSeconds {{ "}}" }}
+            timeoutSeconds: {{ "{{" }} .Values.probes.timeoutSeconds {{ "}}" }}
+            failureThreshold: {{ "{{" }} .Values.probes.failureThreshold {{ "}}" }}
+          resources:
+{{ "{{" }}- toYaml .Values.resources | nindent 12 {{ "}}" }}

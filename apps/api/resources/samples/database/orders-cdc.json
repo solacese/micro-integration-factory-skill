@@ -1,0 +1,21 @@
+{
+  "name": "orders-cdc",
+  "type": "postgresql",
+  "tables": [
+    "orders",
+    "order_items",
+    "customers"
+  ],
+  "connection": {
+    "host": "${DB_HOST}",
+    "port": 5432,
+    "database": "commerce",
+    "schema": "public"
+  },
+  "cdc": {
+    "method": "log_based",
+    "slot_name": "solace_cdc_slot",
+    "publication": "solace_publication",
+    "snapshot_mode": "initial"
+  }
+}

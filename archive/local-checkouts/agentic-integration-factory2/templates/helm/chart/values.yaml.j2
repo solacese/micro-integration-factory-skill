@@ -1,0 +1,13 @@
+image:
+  repository: {{ artifact_id }}
+  tag: {{ service_version }}
+  pullPolicy: IfNotPresent
+
+service:
+  port: 80
+  targetPort: 8080
+
+env:
+{% for entry in runtime_env_entries %}
+  {{ entry.name }}: "{{ entry.default }}"
+{% endfor %}

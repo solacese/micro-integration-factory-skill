@@ -1,0 +1,50 @@
+[project]
+name = "spec2event-api"
+version = "0.1.0"
+description = "FastAPI orchestrator for OpenAPI-to-Solace MDK generation, build, deploy, and live demo flows."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+  "alembic==1.17.2",
+  "boto3==1.40.59",
+  "cryptography==46.0.3",
+  "fastapi==0.121.1",
+  "httpx==0.28.1",
+  "jinja2==3.1.6",
+  "jsonref==1.1.0",
+  "openapi-spec-validator==0.7.2",
+  "psycopg[binary]==3.2.12",
+  "pydantic==2.12.3",
+  "pydantic-settings==2.11.0",
+  "python-multipart==0.0.20",
+  "pyyaml==6.0.3",
+  "redis==6.4.0",
+  "rq==2.6.1",
+  "solace-pubsubplus==1.11.0",
+  "sqlalchemy==2.0.44",
+  "structlog==25.5.0",
+  "tenacity==9.1.2",
+  "uvicorn[standard]==0.38.0",
+]
+
+[dependency-groups]
+dev = [
+  "pytest==8.4.2",
+  "pytest-cov==7.0.0",
+  "ruff==0.14.2"
+]
+
+[tool.uv]
+package = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "B", "UP", "ASYNC"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+markers = ["integration: exercises generated project build and packaging flow"]

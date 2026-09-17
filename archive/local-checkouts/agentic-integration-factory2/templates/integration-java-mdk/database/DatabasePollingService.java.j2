@@ -1,0 +1,184 @@
+package com.spec2event.generated.service;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.stereotype.Service;
+
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
+
+@Service
+public class DatabasePollingService {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(DatabasePollingService.class);
+
+    private final JdbcTemplate jdbcTemplate;
+    private final CanonicalEventService canonicalEventService;
+    private final SolacePublisherService publisherService;
+    private final ObjectMapper objectMapper;
+    private final AtomicReference<CursorState> lastCursor = new AtomicReference<>();
+    private final Map<String, JsonNode> knownRecords = new ConcurrentHashMap<>();
+
+    @Value("${spec2event.database.batchSize:50}")
+    private int defaultBatchSize;
+
+    public DatabasePollingService(
+            JdbcTemplate jdbcTemplate,
+            CanonicalEventService canonicalEventService,
+            SolacePublisherService publisherService,
+            ObjectMapper objectMapper
+    ) {
+        this.jdbcTemplate = jdbcTemplate;
+        this.canonicalEventService = canonicalEventService;
+        this.publisherService = publisherService;
+        this.objectMapper = objectMapper;
+    }
+
+    @Scheduled(
+            fixedDelayString = "#{${spec2event.database.pollIntervalSeconds:60} * 1000}",
+            initialDelayString = "#{${spec2event.database.initialDelaySeconds:300} * 1000}"
+    )
+    public void scheduledPoll() {
+        try {
+            PollResult result = pollOnce(defaultBatchSize, UUID.randomUUID().toString());
+            if (result.rowCount() > 0) {
+                LOGGER.info("Published {} rows from {}.", result.rowCount(), "{{ database_operation.qualifiedTableName }}");
+            }
+        } catch (Exception exc) {
+            LOGGER.warn("Scheduled polling failed for {{ database_operation.qualifiedTableName }}: {}", exc.getMessage());
+        }
+    }
+
+    public PollResult pollOnce(int requestedLimit, String correlationId) {
+        int limit = requestedLimit > 0 ? requestedLimit : defaultBatchSize;
+        CursorState cursor = lastCursor.get();
+        String mode = cursor == null ? "snapshot" : "incremental";
+
+        String baseQuery = """
+                select
+{% for column in database_columns %}
+                  "{{ column.name }}"{% if not loop.last %},{% endif %}
+{% endfor %}
+                from "{{ database_config.schema }}"."{{ database_config.table }}"
+                """;
+        String query;
+        List<Object> parameters = new ArrayList<>();
+        if (cursor == null) {
+            query = baseQuery + """
+                    order by "{{ database_config.watermarkColumn }}" asc, "{{ database_config.idColumn }}" asc
+                    limit ?
+                    """;
+            parameters.add(limit);
+        } else {
+            query = baseQuery + """
+                    where (
+                      "{{ database_config.watermarkColumn }}" > ?
+                      or (
+                        "{{ database_config.watermarkColumn }}" = ?
+                        and "{{ database_config.idColumn }}" > ?
+                      )
+                    )
+                    order by "{{ database_config.watermarkColumn }}" asc, "{{ database_config.idColumn }}" asc
+                    limit ?
+                    """;
+            Timestamp watermark = Timestamp.valueOf(cursor.watermark());
+            parameters.add(watermark);
+            parameters.add(watermark);
+            parameters.add(cursor.lastId());
+            parameters.add(limit);
+        }
+
+        List<Map<String, Object>> rows = jdbcTemplate.queryForList(query, parameters.toArray());
+        if (rows.isEmpty()) {
+            return new PollResult(0, List.of(), cursor != null ? cursor.watermark().toString() : null, false, mode);
+        }
+
+        Set<String> uniqueTopics = new LinkedHashSet<>();
+        for (Map<String, Object> row : rows) {
+            Map<String, Object> normalized = new LinkedHashMap<>();
+            for (Map.Entry<String, Object> entry : row.entrySet()) {
+                normalized.put(entry.getKey(), normalizeValue(entry.getValue()));
+            }
+            JsonNode payload = objectMapper.valueToTree(normalized);
+            String recordId = String.valueOf(normalized.get("{{ database_config.idColumn }}"));
+            JsonNode previousPayload = knownRecords.get(recordId);
+            uniqueTopics.addAll(
+                    publisherService.publish(
+                            canonicalEventService.planForRecord(payload, previousPayload),
+                            payload,
+                            correlationId,
+                            "{{ database_operation.operationId }}"
+                    )
+            );
+            knownRecords.put(recordId, payload.deepCopy());
+        }
+
+        Map<String, Object> lastRow = rows.get(rows.size() - 1);
+        LocalDateTime watermark = toLocalDateTime(lastRow.get("{{ database_config.watermarkColumn }}"));
+        long lastId = toLong(lastRow.get("{{ database_config.idColumn }}"));
+        lastCursor.set(new CursorState(watermark, lastId));
+
+        return new PollResult(
+                rows.size(),
+                List.copyOf(uniqueTopics),
+                watermark.toString(),
+                rows.size() == limit,
+                mode
+        );
+    }
+
+    public int defaultBatchSize() {
+        return defaultBatchSize;
+    }
+
+    private Object normalizeValue(Object value) {
+        if (value instanceof Timestamp timestamp) {
+            return timestamp.toInstant().toString();
+        }
+        if (value instanceof java.math.BigDecimal decimal) {
+            return decimal.doubleValue();
+        }
+        return value;
+    }
+
+    private LocalDateTime toLocalDateTime(Object value) {
+        if (value instanceof LocalDateTime localDateTime) {
+            return localDateTime;
+        }
+        if (value instanceof Timestamp timestamp) {
+            return timestamp.toLocalDateTime();
+        }
+        throw new IllegalStateException("Unsupported watermark value: " + value);
+    }
+
+    private long toLong(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        throw new IllegalStateException("Unsupported id value: " + value);
+    }
+
+    private record CursorState(LocalDateTime watermark, long lastId) {}
+
+    public record PollResult(
+            int rowCount,
+            List<String> publishedTopics,
+            String watermark,
+            boolean moreAvailable,
+            String mode
+    ) {}
+}

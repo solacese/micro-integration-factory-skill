@@ -1,0 +1,88 @@
+services:
+  solace:
+    image: solace/solace-pubsub-standard:latest
+    container_name: solace
+    environment:
+      - username_admin_globalaccesslevel=admin
+      - username_admin_password=admin
+    ports:
+      - "8080:8080"   # Web UI
+      - "55555:55555" # SMF
+      - "8008:8008"   # Web messaging
+      - "1883:1883"   # MQTT
+      - "8000:8000"   # AMQP
+      - "5672:5672"   # AMQP
+      - "9000:9000"   # REST
+    shm_size: 1g
+    ulimits:
+      nofile:
+        soft: 2448
+        hard: 6592
+      core: -1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: postgres
+    environment:
+      POSTGRES_DB: spec2event
+      POSTGRES_USER: spec2event
+      POSTGRES_PASSWORD: spec2event
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spec2event"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:8-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ../../apps/api
+      dockerfile: Dockerfile
+    container_name: spec2event-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      solace:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+psycopg://spec2event:spec2event@postgres:5432/spec2event
+      - REDIS_URL=redis://redis:6379/0
+      - SOLACE_BROKER_URL=tcp://solace:55555
+      - SOLACE_VPN=default
+      - SOLACE_USERNAME=admin
+      - SOLACE_PASSWORD=admin
+      - DEMO_ADMIN_PASSWORD=demo123
+      - APP_ENV=development
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../apps/api/generated-runs:/workspace/generated-runs
+    command: uvicorn spec2event.main:app --host 0.0.0.0 --port 8000
+
+volumes:
+  postgres_data:
+  redis_data:

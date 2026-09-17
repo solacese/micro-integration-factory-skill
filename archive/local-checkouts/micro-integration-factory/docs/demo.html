@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Build your Micro Integration in minutes</title>
+<meta name="description" content="Design event-driven micro-integrations on Solace PubSub+ with an AI advisor.">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --green:#00c895;--green-light:#e6faf4;--green-hover:#00b386;
+  --text:#1a1a2e;--text-dim:#5a5a72;--text-muted:#9898aa;
+  --bg:#ffffff;--bg-subtle:#f8f9fb;--bg-card:#ffffff;
+  --border:#e8e8ee;--border-light:#f0f0f5;
+  --radius:12px;--radius-sm:8px;
+  --mono:'SF Mono','Fira Code','JetBrains Mono',Consolas,monospace;
+  --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  --shadow:0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04);
+  --shadow-md:0 4px 12px rgba(0,0,0,.08);
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.6}
+a{color:var(--green);text-decoration:none}
+a:hover{color:var(--green-hover)}
+
+/* ── Nav ── */
+nav{position:sticky;top:0;z-index:100;background:rgba(255,255,255,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);padding:14px 0}
+nav .wrap{max-width:960px;margin:0 auto;padding:0 24px;display:flex;align-items:center;justify-content:space-between}
+.brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:1rem;color:var(--text);text-decoration:none}
+.brand img{height:22px}
+.nav-r{display:flex;gap:20px;align-items:center}
+.nav-r a{color:var(--text-dim);font-size:.85rem;font-weight:500}
+.nav-r a:hover{color:var(--green)}
+
+/* ── Hero ── */
+.hero{padding:80px 24px 48px;text-align:center;max-width:720px;margin:0 auto}
+.hero h1{font-size:clamp(2rem,5vw,3rem);font-weight:800;line-height:1.15;color:var(--text);margin-bottom:16px;letter-spacing:-.02em}
+.hero p{font-size:1.1rem;color:var(--text-dim);max-width:540px;margin:0 auto 32px}
+
+/* ── Examples ── */
+.examples{max-width:960px;margin:0 auto;padding:0 24px 56px;display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+@media(max-width:700px){.examples{grid-template-columns:1fr}}
+.ex{background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius);padding:20px;cursor:pointer;transition:all .2s}
+.ex:hover{border-color:var(--green);box-shadow:var(--shadow-md)}
+.ex h3{font-size:.95rem;font-weight:600;margin-bottom:6px}
+.ex p{font-size:.85rem;color:var(--text-dim);line-height:1.5}
+
+/* ── Chat ── */
+.chat-wrap{max-width:720px;margin:0 auto;padding:0 24px 80px}
+.chat{border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow)}
+.chat-head{padding:12px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;background:var(--bg-subtle)}
+.chat-dot{width:8px;height:8px;border-radius:50%;background:var(--green);animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.chat-head span{font-weight:600;font-size:.9rem}
+.chat-head .sub{margin-left:auto;font-size:.75rem;color:var(--text-muted);font-weight:400}
+.msgs{min-height:420px;max-height:560px;overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:14px;scroll-behavior:smooth}
+.msgs::-webkit-scrollbar{width:5px}
+.msgs::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* Messages */
+.msg{display:flex;gap:10px;max-width:88%;animation:fadeIn .25s ease-out}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.msg-user{align-self:flex-end;flex-direction:row-reverse}
+.msg-assistant{align-self:flex-start}
+.msg-avatar{width:28px;height:28px;border-radius:6px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;margin-top:2px}
+.msg-user .msg-avatar{background:var(--green-light);color:var(--green)}
+.msg-assistant .msg-avatar{background:var(--bg-subtle);border:1px solid var(--border)}
+.msg-assistant .msg-avatar svg{width:16px;height:16px}
+.bubble{border-radius:var(--radius);padding:12px 16px;font-size:.9rem;line-height:1.65;word-break:break-word}
+.msg-user .bubble{background:var(--green);color:#fff;border-bottom-right-radius:4px}
+.msg-assistant .bubble{background:var(--bg-subtle);border:1px solid var(--border);color:var(--text);border-bottom-left-radius:4px}
+
+/* Markdown in assistant */
+.msg-assistant .bubble h1,.msg-assistant .bubble h2,.msg-assistant .bubble h3{font-family:var(--mono);color:var(--text);margin:16px 0 6px;font-size:.95rem}
+.msg-assistant .bubble h1:first-child,.msg-assistant .bubble h2:first-child,.msg-assistant .bubble h3:first-child{margin-top:0}
+.msg-assistant .bubble p{margin:6px 0}
+.msg-assistant .bubble p:first-child{margin-top:0}
+.msg-assistant .bubble p:last-child{margin-bottom:0}
+.msg-assistant .bubble code{font-family:var(--mono);background:#f0f2f5;padding:2px 5px;border-radius:4px;font-size:.82rem;color:#d63384}
+.msg-assistant .bubble pre{background:#1e1e2e;border-radius:var(--radius-sm);padding:14px;overflow-x:auto;margin:10px 0;font-family:var(--mono);font-size:.8rem;line-height:1.7;color:#cdd6f4}
+.msg-assistant .bubble pre code{background:none;padding:0;color:inherit;font-size:inherit}
+.msg-assistant .bubble strong{font-weight:600}
+.msg-assistant .bubble ul,.msg-assistant .bubble ol{padding-left:18px;margin:6px 0}
+.msg-assistant .bubble li{margin:3px 0;color:var(--text-dim)}
+.msg-assistant .bubble li strong{color:var(--text)}
+.msg-assistant .bubble hr{border:none;border-top:1px solid var(--border);margin:14px 0}
+.msg-assistant .bubble blockquote{border-left:3px solid var(--green);padding-left:12px;margin:8px 0;color:var(--text-dim)}
+.msg-assistant .bubble a{color:var(--green);text-decoration:underline;text-underline-offset:2px}
+
+/* Loading */
+.dots{display:flex;gap:4px;padding:6px 0}
+.dots span{width:7px;height:7px;border-radius:50%;background:var(--text-muted);animation:bounce 1.4s ease-in-out infinite}
+.dots span:nth-child(2){animation-delay:.2s}
+.dots span:nth-child(3){animation-delay:.4s}
+@keyframes bounce{0%,80%,100%{opacity:.3;transform:scale(.8)}40%{opacity:1;transform:scale(1)}}
+
+/* Error */
+.msg-err{background:var(--bg-subtle);border:1px solid #fee2e2;border-radius:var(--radius);padding:12px 16px;display:flex;align-items:center;gap:10px;animation:fadeIn .25s;align-self:flex-start;max-width:88%}
+.msg-err-text{font-size:.85rem;color:var(--text-dim)}
+.msg-err-retry{background:var(--bg);color:var(--text);border:1px solid var(--border);padding:5px 12px;border-radius:var(--radius-sm);font-size:.8rem;font-weight:600;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.msg-err-retry:hover{border-color:var(--green);color:var(--green)}
+
+/* Input */
+.chat-input{padding:12px 20px 16px;border-top:1px solid var(--border);display:flex;gap:10px;align-items:flex-end}
+.chat-input textarea{flex:1;border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px;font-family:var(--sans);font-size:.9rem;resize:none;outline:none;line-height:1.5;min-height:42px;max-height:140px;overflow-y:auto;color:var(--text);background:var(--bg)}
+.chat-input textarea:focus{border-color:var(--green)}
+.chat-input textarea::placeholder{color:var(--text-muted)}
+.chat-input textarea:disabled{opacity:.5}
+.chat-input button{width:42px;height:42px;border-radius:var(--radius-sm);background:var(--green);color:#fff;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .2s;flex-shrink:0}
+.chat-input button:hover:not(:disabled){background:var(--green-hover)}
+.chat-input button:disabled{opacity:.4;cursor:not-allowed}
+.chat-input button svg{width:18px;height:18px}
+
+/* Welcome */
+.welcome{text-align:center;padding:48px 20px;color:var(--text-muted)}
+.welcome h3{color:var(--text);font-size:1rem;margin-bottom:6px}
+.welcome p{font-size:.85rem;max-width:360px;margin:0 auto}
+
+/* Toast */
+.toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--text);color:#fff;padding:8px 18px;border-radius:var(--radius-sm);font-size:.82rem;opacity:0;transition:all .3s;pointer-events:none;z-index:200}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+/* Footer */
+footer{border-top:1px solid var(--border);padding:32px 0;text-align:center;color:var(--text-muted);font-size:.82rem}
+footer a{color:var(--green);font-weight:500}
+.foot-links{display:flex;gap:20px;justify-content:center;margin-top:10px}
+
+@media(max-width:600px){
+  .hero{padding:48px 20px 32px}
+  .hero h1{font-size:1.8rem}
+  .msgs{min-height:340px;max-height:440px;padding:14px}
+  .msg{max-width:95%}
+  .nav-r{gap:14px}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a href="index.html" class="brand" aria-label="Home">
+      <svg viewBox="0 0 28 28" fill="none" width="24" height="24"><rect width="28" height="28" rx="6" fill="#00c895" fill-opacity=".15"/><path d="M8 14h4l2-4 2 8 2-4h4" stroke="#00c895" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Agentic Integration Factory
+    </a>
+    <div class="nav-r">
+      <a href="#chat">Try It</a>
+      <a href="https://github.com/solacese/agentic-integration-factory" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<section class="hero">
+  <h1>Build your Micro Integration<br>in minutes</h1>
+  <p>Describe what you need. The AI advisor will design the event architecture, topics, schemas, and deployment strategy on Solace PubSub+.</p>
+</section>
+
+<div class="examples">
+  <div class="ex" tabindex="0" role="button" data-prompt="Receive Stripe payment webhooks and publish payment events to Solace for downstream processing">
+    <h3>Stripe Webhooks</h3>
+    <p>Ingest Stripe payment events and publish them to Solace topics</p>
+  </div>
+  <div class="ex" tabindex="0" role="button" data-prompt="Monitor a PostgreSQL products table for changes and publish inventory events in real-time">
+    <h3>Database CDC</h3>
+    <p>Watch a PostgreSQL table for changes and stream inventory events</p>
+  </div>
+  <div class="ex" tabindex="0" role="button" data-prompt="Expose a Petstore OpenAPI spec as event-driven integration with CRUD operations mapped to Solace topics">
+    <h3>REST to Events</h3>
+    <p>Turn an OpenAPI spec into event-driven operations on Solace</p>
+  </div>
+</div>
+
+<div class="chat-wrap" id="chat">
+  <div class="chat">
+    <div class="chat-head">
+      <div class="chat-dot"></div>
+      <span>Integration Advisor</span>
+      <span class="sub">Powered by Solace PubSub+</span>
+    </div>
+    <div class="msgs" id="msgs">
+      <div class="welcome">
+        <h3>What do you want to build?</h3>
+        <p>Describe your integration or pick an example above.</p>
+      </div>
+    </div>
+    <div class="chat-input">
+      <textarea id="input" placeholder="Describe your integration..." rows="1"></textarea>
+      <button id="send" type="button" aria-label="Send">
+        <svg viewBox="0 0 20 20" fill="none"><path d="M3 10l7-7m0 0l7 7m-7-7v14" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="rotate(90 10 10)"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast">Please wait a moment...</div>
+
+<footer>
+  <p>Powered by <a href="https://solace.com/products/event-broker/" target="_blank" rel="noopener">Solace PubSub+</a></p>
+  <div class="foot-links">
+    <a href="https://github.com/solacese/agentic-integration-factory" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://docs.solace.com" target="_blank" rel="noopener">Docs</a>
+    <a href="https://solace.com/products/portal/" target="_blank" rel="noopener">Event Portal</a>
+  </div>
+</footer>
+
+<script>
+(function(){
+  'use strict';
+  var msgs=document.getElementById('msgs'),input=document.getElementById('input'),
+      send=document.getElementById('send'),toast=document.getElementById('toast');
+  var API='https://nujhfyh70e.execute-api.ca-central-1.amazonaws.com/chat';
+  var history=[],loading=false,lastSend=0,welcomed=true;
+
+  function resize(){input.style.height='auto';input.style.height=Math.min(input.scrollHeight,140)+'px'}
+  input.addEventListener('input',resize);
+  input.addEventListener('keydown',function(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();go()}});
+  send.addEventListener('click',go);
+
+  document.querySelectorAll('.ex').forEach(function(c){
+    function h(){var p=c.getAttribute('data-prompt');if(p){input.value=p;resize();document.getElementById('chat').scrollIntoView({behavior:'smooth'});setTimeout(go,300)}}
+    c.addEventListener('click',h);
+    c.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();h()}});
+  });
+
+  function go(){
+    var t=input.value.trim();if(!t||loading)return;
+    var now=Date.now();if(now-lastSend<3000){toast.classList.add('show');setTimeout(function(){toast.classList.remove('show')},1500);return}
+    lastSend=now;
+    if(welcomed){var w=msgs.querySelector('.welcome');if(w)w.remove();welcomed=false}
+    addMsg('user',t);history.push({role:'user',content:t});
+    if(history.length>20)history=history.slice(-20);
+    input.value='';resize();input.focus();
+    fetchAI();
+  }
+
+  function addMsg(role,content){
+    var d=document.createElement('div');d.className='msg msg-'+role;
+    var av=document.createElement('div');av.className='msg-avatar';
+    if(role==='user')av.textContent='U';
+    else av.innerHTML='<svg viewBox="0 0 28 28" fill="none"><rect width="28" height="28" rx="6" fill="#00c895" fill-opacity=".15"/><path d="M8 14h4l2-4 2 8 2-4h4" stroke="#00c895" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    var b=document.createElement('div');b.className='bubble';
+    if(role==='assistant')b.innerHTML=md(content);else b.textContent=content;
+    d.appendChild(av);d.appendChild(b);msgs.appendChild(d);scroll();return d;
+  }
+
+  function showLoad(){
+    var d=document.createElement('div');d.className='msg msg-assistant';d.id='ld';
+    var av=document.createElement('div');av.className='msg-avatar';
+    av.innerHTML='<svg viewBox="0 0 28 28" fill="none"><rect width="28" height="28" rx="6" fill="#00c895" fill-opacity=".15"/><path d="M8 14h4l2-4 2 8 2-4h4" stroke="#00c895" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+    var b=document.createElement('div');b.className='bubble';
+    b.innerHTML='<div class="dots"><span></span><span></span><span></span></div>';
+    d.appendChild(av);d.appendChild(b);msgs.appendChild(d);scroll();
+  }
+
+  function showErr(t){
+    var d=document.createElement('div');d.className='msg-err';
+    d.innerHTML='<div class="msg-err-text">'+esc(t)+'</div><button class="msg-err-retry">Retry</button>';
+    d.querySelector('.msg-err-retry').addEventListener('click',function(){d.remove();fetchAI()});
+    msgs.appendChild(d);scroll();
+  }
+
+  function fetchAI(){
+    loading=true;ui();showLoad();
+    fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({messages:history.slice()})})
+    .then(function(r){if(!r.ok)throw new Error('Status '+r.status);return r.json()})
+    .then(function(d){rm('ld');var c=d.content||'Please try again.';addMsg('assistant',c);history.push({role:'assistant',content:c});if(history.length>20)history=history.slice(-20)})
+    .catch(function(e){rm('ld');showErr('Could not reach the advisor. '+(e.message||''))})
+    .finally(function(){loading=false;ui()});
+  }
+
+  function ui(){input.disabled=loading;send.disabled=loading}
+  function scroll(){requestAnimationFrame(function(){msgs.scrollTop=msgs.scrollHeight})}
+  function rm(id){var e=document.getElementById(id);if(e)e.remove()}
+  function esc(s){var d=document.createElement('div');d.textContent=s;return d.innerHTML}
+
+  // Markdown
+  function md(text){
+    if(!text)return'';
+    text=text.replace(/\r\n/g,'\n');
+    var cb=[];
+    text=text.replace(/```(\w*)\n?([\s\S]*?)```/g,function(m,l,c){var i=cb.length;cb.push('<pre><code>'+esc(c.replace(/\n$/,''))+'</code></pre>');return'\0CB'+i+'\0'});
+    var ic=[];
+    text=text.replace(/`([^`\n]+)`/g,function(m,c){var i=ic.length;ic.push('<code>'+esc(c)+'</code>');return'\0IC'+i+'\0'});
+    var blocks=text.split(/\n{2,}/),html=[];
+    for(var i=0;i<blocks.length;i++){
+      var b=blocks[i].trim();if(!b)continue;
+      if(/^\0CB\d+\0$/.test(b)){html.push(b);continue}
+      if(/^#{1,6}\s/.test(b)){var hm=b.match(/^(#{1,6})\s+(.*)/);if(hm){html.push('<h'+hm[1].length+'>'+inl(hm[2])+'</h'+hm[1].length+'>');continue}}
+      if(/^[-*+]\s/.test(b)){var li=b.split('\n'),ul='<ul>';for(var j=0;j<li.length;j++){var it=li[j].replace(/^[-*+]\s+/,'');if(it.trim())ul+='<li>'+inl(it)+'</li>'}html.push(ul+'</ul>');continue}
+      if(/^\d+\.\s/.test(b)){var oi=b.split('\n'),ol='<ol>';for(var k=0;k<oi.length;k++){var ot=oi[k].replace(/^\d+\.\s+/,'');if(ot.trim())ol+='<li>'+inl(ot)+'</li>'}html.push(ol+'</ol>');continue}
+      if(/^>\s/.test(b)){html.push('<blockquote>'+inl(b.replace(/^>\s?/gm,''))+'</blockquote>');continue}
+      if(/^[-*_]{3,}$/.test(b.trim())){html.push('<hr>');continue}
+      var lines=b.split('\n'),pl=[];
+      for(var l=0;l<lines.length;l++){
+        var ln=lines[l];
+        if(/^[-*+]\s/.test(ln)){if(pl.length){html.push('<p>'+inl(pl.join('<br>'))+'</p>');pl=[]}var sl='<ul>';for(;l<lines.length&&/^[-*+]\s/.test(lines[l]);l++)sl+='<li>'+inl(lines[l].replace(/^[-*+]\s+/,''))+'</li>';l--;html.push(sl+'</ul>')}
+        else if(/^\d+\.\s/.test(ln)){if(pl.length){html.push('<p>'+inl(pl.join('<br>'))+'</p>');pl=[]}var so='<ol>';for(;l<lines.length&&/^\d+\.\s/.test(lines[l]);l++)so+='<li>'+inl(lines[l].replace(/^\d+\.\s+/,''))+'</li>';l--;html.push(so+'</ol>')}
+        else if(/^#{1,6}\s/.test(ln)){if(pl.length){html.push('<p>'+inl(pl.join('<br>'))+'</p>');pl=[]}var hh=ln.match(/^(#{1,6})\s+(.*)/);if(hh)html.push('<h'+hh[1].length+'>'+inl(hh[2])+'</h'+hh[1].length+'>')}
+        else pl.push(ln);
+      }
+      if(pl.length)html.push('<p>'+inl(pl.join('<br>'))+'</p>');
+    }
+    var r=html.join('\n');
+    for(var ci=0;ci<cb.length;ci++)r=r.replace('\0CB'+ci+'\0',cb[ci]);
+    for(var ii=0;ii<ic.length;ii++)r=r.split('\0IC'+ii+'\0').join(ic[ii]);
+    return r;
+  }
+  function inl(t){
+    t=t.replace(/\*\*\*(.+?)\*\*\*/g,'<strong><em>$1</em></strong>');
+    t=t.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+    t=t.replace(/\*(.+?)\*/g,'<em>$1</em>');
+    t=t.replace(/~~(.+?)~~/g,'<del>$1</del>');
+    t=t.replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return t;
+  }
+})();
+</script>
+</body>
+</html>

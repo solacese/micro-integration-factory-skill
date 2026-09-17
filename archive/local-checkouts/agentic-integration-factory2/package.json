@@ -1,0 +1,27 @@
+{
+  "name": "agentic-integration-factory",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@11.7.0",
+  "workspaces": [
+    "apps/web",
+    "packages/shared"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n web,api,worker -c blue,green,yellow \"npm run dev:web\" \"make dev-api\" \"make dev-worker\"",
+    "dev:web": "npm --workspace @spec2event/web run dev",
+    "build:web": "npm --workspace @spec2event/web run build",
+    "lint:web": "npm --workspace @spec2event/web run lint",
+    "typecheck:web": "npm --workspace @spec2event/web run typecheck",
+    "demo:openapi": "./scripts/use_demo_env.sh openapi",
+    "demo:postgres": "./scripts/use_demo_env.sh postgres",
+    "demo:hybrid": "./scripts/use_demo_env.sh hybrid"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "concurrently": "^9.2.1"
+  },
+  "dependencies": {
+    "solclientjs": "^10.18.3"
+  }
+}

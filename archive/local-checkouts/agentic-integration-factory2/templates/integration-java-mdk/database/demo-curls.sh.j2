@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE_URL="${1:-http://localhost:8080}"
+
+curl -X POST "${BASE_URL}/internal/database/poll-now" \
+  -H "Content-Type: application/json" \
+  -d '{"limit": 5}'

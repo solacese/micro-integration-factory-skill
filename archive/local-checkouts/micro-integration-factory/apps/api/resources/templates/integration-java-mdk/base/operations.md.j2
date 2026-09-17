@@ -1,0 +1,39 @@
+# Operations
+
+## Health
+
+- Liveness and readiness path: `/actuator/health`
+- Metrics path: `/actuator/metrics`
+- Application port: `8080`
+
+## High Availability
+
+The generated Helm chart defaults to two replicas, rolling updates, resource requests, probes, and a PodDisruptionBudget. Keep `replicaCount` at `2` or higher for production.
+
+## Security
+
+- Never commit `.env`; use `.env.example` only for local setup.
+- Store credentials outside the image.
+- Run the container as the non-root app user provided by the Dockerfile.
+- Review the generated transform artifact for accidental sensitive field propagation.
+
+## Performance
+
+- Keep transform artifacts under the 128 KB guardrail used by the local worker.
+- Keep preview samples small and representative.
+- Use bounded aggregation windows and explicit keys when building aggregation transforms.
+
+## Build
+
+```bash
+mvn test
+docker build -t {{ artifact_id }}:{{ service_version }} .
+```
+
+## Deploy
+
+```bash
+helm upgrade --install {{ service_name }} ./helm \
+  --set image.repository={{ artifact_id }} \
+  --set image.tag={{ service_version }}
+```
