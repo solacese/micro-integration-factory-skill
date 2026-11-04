@@ -59,7 +59,7 @@
   byId('form').addEventListener('submit', function (event) { event.preventDefault(); var text = input.value.trim(); if (!text || busy || !endpoint) return; append('user', text); history.push({ role: 'user', content: text }); input.value = ''; input.style.height = 'auto'; request(); });
   input.addEventListener('input', function () { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 160) + 'px'; });
   input.addEventListener('keydown', function (event) { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); byId('form').requestSubmit(); } });
-  byId('reset').addEventListener('click', function () { session++; if (controller) controller.abort(); controller = null; clearInterval(tick); history = []; previousCore = ''; clearArtifact(); messages.replaceChildren(); byId('timer').textContent = ''; input.value = ''; ui(false); state('Ready when you are', 'Start with an input, the behavior you need, and an expected output.'); welcome(); input.focus(); });
+  byId('reset').addEventListener('click', function () { session++; if (controller) controller.abort(); controller = null; clearInterval(tick); history = []; previousCore = ''; clearArtifact(); messages.replaceChildren(); byId('timer').textContent = ''; input.value = ''; ui(false); state('Ready to build', 'Describe your idea in the chat.'); welcome(); input.focus(); });
   byId('download').addEventListener('click', async function () {
     if (!project) return;
     try {
@@ -80,8 +80,8 @@
       if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(parsed.hostname))) throw new Error('Invalid service URL');
       endpoint = parsed.href.replace(/\/$/, '');
       var health = await fetch(endpoint + '/health', { signal: AbortSignal.timeout(15000) }); if (!health.ok) throw new Error('Service unavailable');
-      byId('connection').textContent = 'AI Core connected'; byId('connection-dot').style.background = 'var(--green)'; ui(false);
-    } catch (error) { endpoint = ''; byId('connection').textContent = 'Build service unavailable'; state('Service unavailable', 'The build service is temporarily unavailable. Please reload to retry.'); send.disabled = true; }
+      ui(false);
+    } catch (error) { endpoint = ''; state('Temporarily unavailable', 'Please refresh in a moment to try again.'); send.disabled = true; }
   }
   welcome(); connect();
 })();

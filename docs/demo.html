@@ -2,31 +2,28 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="color-scheme" content="dark"><link rel="icon" href="data:,">
+<meta name="color-scheme" content="dark"><link rel="icon" type="image/png" href="assets/factory-pipes-logo.png">
 <title>MI Factory</title>
 <meta name="description" content="Describe your integration. Build Core.java. Download MI v1.">
-<style>
-:root{color-scheme:dark;--bg:#0d0f13;--surface:#14171d;--raised:#1b1f27;--line:#2a303b;--text:#ebedf1;--muted:#929bac;--green:#50dbad;--red:#f6a0a0}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;font-size:14px}button,textarea{font:inherit}button{cursor:pointer}button:disabled{cursor:default}header{max-width:1180px;margin:auto;padding:28px 24px 22px;display:flex;align-items:center;justify-content:space-between}header strong{font-size:17px;letter-spacing:-.5px}header strong i{font-style:normal;color:var(--green)}.quiet{background:none;border:0;color:var(--muted);padding:8px}.quiet:hover{color:var(--text)}main{max-width:1180px;margin:auto;padding:0 24px 28px;display:grid;grid-template-columns:minmax(0,1fr) 292px;gap:20px;height:calc(100dvh - 98px);min-height:540px}.chat{background:var(--surface);border:1px solid var(--line);border-radius:14px;display:flex;flex-direction:column;min-width:0;overflow:hidden}.chat-title{padding:21px 24px;border-bottom:1px solid var(--line)}h1{font-size:21px;letter-spacing:-.6px;margin:0 0 7px;font-weight:600}.sub{margin:0;color:var(--muted);font-size:13px;line-height:1.6}#messages{flex:1;overflow:auto;padding:24px;display:flex;flex-direction:column;gap:22px;scrollbar-width:thin}.message{max-width:94%;line-height:1.7;overflow-wrap:anywhere}.message .who{font-size:11px;color:var(--muted);margin-bottom:6px;font-weight:600}.message.assistant .who{color:var(--green)}.message.user{align-self:flex-end;background:var(--raised);padding:12px 16px;border-radius:12px;max-width:88%}.message .body{white-space:pre-wrap}.message pre{background:#0e1015;border:1px solid var(--line);padding:14px;border-radius:8px;overflow:auto;white-space:pre;font-size:12px}.message a{color:var(--green)}.error{color:var(--red)}form{padding:16px;border-top:1px solid var(--line)}.composer{border:1px solid #3b4351;border-radius:10px;display:flex;align-items:flex-end;background:#101319;padding:10px 12px;gap:12px}.composer:focus-within{border-color:#6d7d89}textarea{display:block;resize:none;min-height:48px;max-height:160px;flex:1;width:100%;background:none;border:0;outline:0;color:var(--text);line-height:1.6;padding:5px 0}textarea::placeholder{color:#727e90}#send{height:34px;min-width:36px;border:0;border-radius:7px;background:var(--green);color:#08251a;font-weight:700;font-size:18px}#send:disabled{background:#2b343b;color:#64717d}.hint{font-size:11px;color:#748093;margin:9px 2px 0}aside{display:flex;flex-direction:column;min-width:0;padding:5px 0}aside h2{font-size:13px;font-weight:500;color:var(--muted);margin:0 0 24px}.state{display:flex;align-items:center;gap:9px;margin-bottom:10px;font-weight:500}.dot{width:7px;height:7px;border-radius:50%;background:#5d6674;flex-shrink:0}.working .dot{background:var(--green);animation:pulse 1.2s infinite}.ready .dot{background:var(--green)}@keyframes pulse{50%{opacity:.3}}#status-note{min-height:44px;margin:0;color:var(--muted);font-size:12px;line-height:1.7}#timer{font-variant-numeric:tabular-nums;color:var(--muted);font-size:12px;margin-top:14px;min-height:16px}.file{margin-top:32px;padding:17px 0;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}.file-name{font:13px ui-monospace,SFMono-Regular,Consolas,monospace}.file-sub{font-size:12px;color:var(--muted);margin-top:7px}#details{font-size:12px;color:var(--muted);line-height:2;padding-top:15px;min-height:55px}#download{width:100%;padding:13px 16px;border-radius:9px;background:var(--green);color:#08251a;border:0;font-weight:650;margin-top:28px}#download:hover:enabled{background:#7ae6c0}#download:disabled{background:var(--raised);border:1px solid var(--line);color:#657183}.download-note{font-size:11px;line-height:1.65;color:#748093;margin:10px 2px}.connection{display:flex;align-items:center;gap:7px;font-size:11px;color:#748093;margin-top:auto;padding-top:24px}.connection .dot{width:5px;height:5px}button:focus-visible{outline:2px solid var(--green);outline-offset:4px}@media(max-width:740px){header{padding:18px 16px}main{display:flex;flex-direction:column;height:auto;min-height:0;padding:0 16px 24px;gap:24px}.chat{min-height:65dvh;max-height:78dvh}.chat-title{padding:18px}#messages{padding:18px}aside{padding:0 3px}aside h2{margin-bottom:16px}.file{margin-top:15px}#download{margin-top:12px}.connection{margin-top:12px;padding-top:4px}}
-</style>
+<link rel="stylesheet" href="demo.css">
 </head>
 <body>
-<header><strong>MI <i>Factory</i></strong><button class="quiet" id="reset" type="button">New MI</button></header>
+<header><div class="brand"><img src="assets/factory-pipes-logo.png" alt="A friendly factory making pipes" width="82" height="58"><strong>MI <span>Factory</span></strong></div><button class="quiet" id="reset" type="button">New MI</button></header>
 <main>
 <section class="chat" aria-label="Integration conversation">
-  <div class="chat-title"><h1>Your first MI, in minutes.</h1><p class="sub">Describe the behavior. We’ll build the core Java file.</p></div>
+  <div class="chat-title"><h1>Get your MI in <span>&lt;1 min</span></h1><p class="sub">Describe your integration. We’ll build Core.java.</p></div>
   <div id="messages" role="log" aria-live="polite"></div>
   <form id="form"><div class="composer"><textarea id="input" aria-label="Describe your micro integration" placeholder="What should your MI do?" rows="2" maxlength="10000"></textarea><button id="send" type="submit" aria-label="Send message">↑</button></div><p class="hint">Enter to send · Shift + Enter for a new line · Use placeholders for credentials</p></form>
 </section>
 <aside aria-label="Build status">
   <h2>Status</h2>
-  <div id="state" class="state"><span class="dot"></span><span id="status">Ready when you are</span></div>
-  <p id="status-note">Start with an input, the behavior you need, and an expected output.</p>
+  <div id="state" class="state"><span class="dot"></span><span id="status">Ready to build</span></div>
+  <p id="status-note">Describe your idea in the chat.</p>
   <div id="timer"></div>
   <div class="file"><div class="file-name">Core.java</div><div class="file-sub" id="file-status">Your integration’s business logic</div></div>
   <div id="details"></div>
   <button id="download" type="button" disabled>Download MI v1</button>
   <p class="download-note" id="download-note">One editable core. A standard runnable Java project.</p>
-  <div class="connection"><span class="dot" id="connection-dot"></span><span id="connection">Connecting to AI Core…</span></div>
 </aside>
 </main>
 <script src="demo.js" defer></script>
