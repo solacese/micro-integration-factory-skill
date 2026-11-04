@@ -4,6 +4,9 @@
   var input = byId('input'), messages = byId('messages'), send = byId('send');
   var history = [], project = null, previousCore = '', previousGo = '', busy = false, endpoint = '', tick = null, controller = null, started = 0;
   var session = 0, confirmationToken = '', pendingJob = null;
+  var jobStorageKey = 'mi-factory-validation-v1';
+  function forgetJob(){try{sessionStorage.removeItem(jobStorageKey);}catch(error){/* Storage may be disabled. */}}
+  function rememberJob(job){try{sessionStorage.setItem(jobStorageKey,JSON.stringify(job));}catch(error){/* The current session can still finish. */}}
   function state(label, note, kind) { byId('status').textContent = label; byId('status-note').textContent = note; byId('state').className = 'state ' + (kind || ''); }
   function append(role, text, error) {
     var message = document.createElement('div'); message.className = 'message ' + role + (error ? ' error' : '');
@@ -26,6 +29,7 @@
   function clearConfirmationActions() { messages.querySelectorAll('.confirm-actions').forEach(function (item) { item.remove(); }); }
   function submit(text) {
     if (!text || busy || !endpoint) return;
+    pendingJob=null; forgetJob();
     clearConfirmationActions(); append('user', text); history.push({ role: 'user', content: text });
     input.value = ''; input.style.height = 'auto'; request();
   }
@@ -42,7 +46,7 @@
     var thisSession = session; ui(true); clearArtifact();
     var approving = confirmationToken && /^(yes|confirm|proceed|generate|oui|correct)/i.test(history[history.length - 1].content.trim());
     state(approving ? 'Building your v1' : 'Finding the right API', approving ? 'Writing Java and Go, then bundling both MIs…' : 'Checking the official documentation first…', 'working');
-    started = Date.now(); timer(); tick = setInterval(timer, 1000);
+    started = pendingJob && pendingJob.clientStarted || Date.now(); timer(); tick = setInterval(timer, 1000);
     controller = new AbortController(); var timeout = setTimeout(function () { if (controller) controller.abort(); }, 240000);
     try {
       var data;
@@ -56,7 +60,7 @@
       }
       if (thisSession !== session) return;
       if (data.status === 'validating') {
-        pendingJob = data;
+        pendingJob = data; pendingJob.clientStarted = pendingJob.clientStarted || started; rememberJob(pendingJob);
         append('assistant', data.content || 'Both cores are written. Building and benchmarking both runtimes before enabling downloads.');
         clearTimeout(timeout);
         data = await waitForValidation(data, thisSession);
@@ -140,7 +144,7 @@
   byId('form').addEventListener('submit', function (event) { event.preventDefault(); submit(input.value.trim()); });
   input.addEventListener('input', function () { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 160) + 'px'; });
   input.addEventListener('keydown', function (event) { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); byId('form').requestSubmit(); } });
-  byId('reset').addEventListener('click', function () { session++; if (controller) controller.abort(); controller = null; clearInterval(tick); history = []; previousCore = ''; previousGo=''; confirmationToken = ''; pendingJob=null; clearArtifact(); messages.replaceChildren(); byId('timer').textContent = ''; input.value = ''; input.placeholder = 'What should your MI do?'; ui(false); state('Ready to build', 'Describe your idea in the chat.'); welcome(); input.focus(); });
+  byId('reset').addEventListener('click', function () { forgetJob(); session++; if (controller) controller.abort(); controller = null; clearInterval(tick); history = []; previousCore = ''; previousGo=''; confirmationToken = ''; pendingJob=null; clearArtifact(); messages.replaceChildren(); byId('timer').textContent = ''; input.value = ''; input.placeholder = 'What should your MI do?'; ui(false); state('Ready to build', 'Describe your idea in the chat.'); welcome(); input.focus(); });
   async function downloadArtifact(item) {
     if (!item) return;
     try {
@@ -167,6 +171,9 @@
       endpoint = parsed.href.replace(/\/$/, '');
       var health = await fetch(endpoint + '/health', { signal: AbortSignal.timeout(15000) }); if (!health.ok) throw new Error('Service unavailable');
       ui(false);
+      try { var saved=JSON.parse(sessionStorage.getItem(jobStorageKey)||'null');
+        if(saved && saved.status==='validating' && /^[a-f0-9]{32}$/.test(saved.jobId||'') && typeof saved.validationToken==='string' && saved.validationToken.length<2000) {pendingJob=saved;request();}
+      } catch(error) { forgetJob(); }
     } catch (error) { endpoint = ''; state('Temporarily unavailable', 'Please refresh in a moment to try again.'); send.disabled = true; }
   }
   welcome(); connect();
