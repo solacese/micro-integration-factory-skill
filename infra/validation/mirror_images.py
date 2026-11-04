@@ -26,24 +26,32 @@ def credential_environment(registry, password):
     original = (
         Path(os.getenv("DOCKER_CONFIG", str(Path.home() / ".docker"))) / "config.json"
     )
-    metadata = json.loads(original.read_text())
-    helper = metadata.get("credHelpers", {}).get(
-        "https://index.docker.io/v1/"
-    ) or metadata.get("credsStore")
-    if not helper:
-        raise RuntimeError(
-            "A Docker credential helper is required; sign in through Docker Desktop"
-        )
+    metadata = json.loads(original.read_text()) if original.exists() else {}
+    aliases = ["https://index.docker.io/v1/", "index.docker.io", "docker.io"]
+    source_auth = None
+    for alias in aliases:
+        entry = metadata.get("auths", {}).get(alias, {})
+        if entry.get("auth"):
+            username, secret = base64.b64decode(entry["auth"]).decode().split(":", 1)
+            source_auth = {"Username": username, "Secret": secret}
+            break
+        if entry.get("identitytoken"):
+            source_auth = {"Username": "<token>", "Secret": entry["identitytoken"]}
+            break
     with tempfile.TemporaryDirectory(prefix="mi-factory-registry-") as temporary:
         directory = Path(temporary)
-        (directory / "config.json").write_text(
-            json.dumps(
-                {"credsStore": helper, "credHelpers": {registry: "mi-factory-ecr"}}
-            )
-        )
+        config = {"credHelpers": {registry: "mi-factory-ecr"}}
+        if metadata.get("credsStore"):
+            config["credsStore"] = metadata["credsStore"]
+        for alias in aliases:
+            if alias in metadata.get("credHelpers", {}):
+                config["credHelpers"][alias] = metadata["credHelpers"][alias]
+            elif source_auth:
+                config["credHelpers"][alias] = "mi-factory-ecr"
+        (directory / "config.json").write_text(json.dumps(config))
         executable = directory / "docker-credential-mi-factory-ecr"
         executable.write_text(
-            '#!/usr/bin/env python3\nimport json,os,sys\nif sys.argv[1] != "get": sys.exit(1)\njson.dump({"Username":"AWS","Secret":os.environ["MI_FACTORY_ECR_TOKEN"]},sys.stdout)\n'
+            '#!/usr/bin/env python3\nimport json,os,sys\nif sys.argv[1] != "get": sys.exit(1)\nserver=sys.stdin.read().strip()\nif server==os.environ["MI_FACTORY_ECR_REGISTRY"]: result={"Username":"AWS","Secret":os.environ["MI_FACTORY_ECR_TOKEN"]}\nelse: result=json.loads(os.environ["MI_FACTORY_SOURCE_AUTH"])\nif not result: sys.exit(1)\njson.dump(result,sys.stdout)\n'
         )
         executable.chmod(0o700)
         yield {
@@ -51,6 +59,8 @@ def credential_environment(registry, password):
             "DOCKER_CONFIG": temporary,
             "PATH": temporary + os.pathsep + os.environ.get("PATH", ""),
             "MI_FACTORY_ECR_TOKEN": password,
+            "MI_FACTORY_ECR_REGISTRY": registry,
+            "MI_FACTORY_SOURCE_AUTH": json.dumps(source_auth),
         }
 
 
@@ -123,5 +133,10 @@ def prepare(session):
             if not existing or existing[0]["imageId"]["imageDigest"] != digest:
                 raise RuntimeError("The mirrored image digest does not match " + source)
             images[source] = repo["repositoryUri"] + "@" + digest
+            observed = subprocess.check_output(
+                ["crane", "digest", images[source]], text=True, env=environment
+            ).strip()
+            if observed != digest:
+                raise RuntimeError("Private registry content verification failed")
             print("Verified private worker image:", source, flush=True)
     return images, repo["repositoryArn"]
