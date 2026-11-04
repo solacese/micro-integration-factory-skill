@@ -62,6 +62,19 @@ def create_core_project(spec: dict, sources: list[dict] | None = None) -> dict:
             raise ValueError("Each example needs output_base64 or expected_error=true")
         if not isinstance(example.get("headers", {}), dict):
             raise ValueError("Example headers must be an object")
+        if "output_topics" in example:
+            topics = example["output_topics"]
+            if (
+                not isinstance(topics, list)
+                or not 1 <= len(topics) <= 16
+                or any(
+                    not isinstance(topic, str)
+                    or len(topic) > 250
+                    or not re.fullmatch(r"[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)*", topic)
+                    for topic in topics
+                )
+            ):
+                raise ValueError("Example output_topics needs concrete Solace topic names")
     if not any("output_base64" in example for example in examples):
         raise ValueError(
             "Include at least one successful input/output example for the broker smoke test"
@@ -70,7 +83,10 @@ def create_core_project(spec: dict, sources: list[dict] | None = None) -> dict:
         "name": name,
         "description": str(spec.get("description", "Custom micro integration"))[:500],
         "dependencies": [DEPENDENCIES[key] for key in dict.fromkeys(chosen)],
+        "webhook": spec.get("webhook", "none"),
     }
+    if context["webhook"] not in {"none", "stripe"}:
+        raise ValueError("webhook must be none or stripe")
     jinja = Environment(
         loader=FileSystemLoader(str(TEMPLATES)),
         undefined=StrictUndefined,
@@ -115,6 +131,7 @@ def create_core_project(spec: dict, sources: list[dict] | None = None) -> dict:
             "editableCore": "src/main/java/com/solace/mi/Core.java",
             "mdkVersion": "4.3.11",
             "javaRelease": 17,
+            "webhook": context["webhook"],
             "contractExamples": len(examples),
             "verification": {
                 "compile": "not_run",

@@ -2,6 +2,11 @@ package com.solace.mi;
 
 import java.util.*;
 import java.util.concurrent.*;
+import java.nio.charset.StandardCharsets;
+import java.net.URI;
+import java.net.http.*;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import com.solacesystems.jcsmp.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -10,16 +15,20 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @EnabledIfEnvironmentVariable(named="MI_SMOKE_BROKER", matches=".+")
 class BrokerRoundTripIT {
-    @Test void inputTraversesRunningMiAndReturnsOnOutputTopic() throws Exception {
+    @Test void inputTraversesRunningMiAndReturnsOnEveryExpectedTopic() throws Exception {
         var examples=JsonMapper.builder().build().readTree(getClass().getResourceAsStream("/core-examples.json"));
         var example=examples.valueStream().filter(e -> e.has("output_base64")).findFirst().orElseThrow();
+        List<String> topics=new ArrayList<>();
+        if(example.has("output_topics")) example.get("output_topics").forEach(t -> topics.add(t.asText()));
+        else topics.add(System.getenv().getOrDefault("SOLACE_OUTPUT_TOPIC","mi/{{ name }}/out"));
         var p=new JCSMPProperties();
         p.setProperty(JCSMPProperties.HOST,System.getenv("MI_SMOKE_BROKER"));
         p.setProperty(JCSMPProperties.VPN_NAME,System.getenv().getOrDefault("SOLACE_VPN","default"));
         p.setProperty(JCSMPProperties.USERNAME,System.getenv().getOrDefault("SOLACE_USERNAME","default"));
         p.setProperty(JCSMPProperties.PASSWORD,System.getenv().getOrDefault("SOLACE_PASSWORD","default"));
         var session=JCSMPFactory.onlyInstance().createSession(p);
-        var received=new ArrayBlockingQueue<byte[]>(1);
+        var received=new ConcurrentHashMap<String,byte[]>();
+        var latch=new CountDownLatch(topics.size());
         String trace=UUID.randomUUID().toString();
         try {
             session.connect();
@@ -27,30 +36,54 @@ class BrokerRoundTripIT {
                 public void onReceive(BytesXMLMessage m) {
                     try {
                         if(m.getProperties()!=null && trace.equals(m.getProperties().getString("mi_correlation_id"))) {
-                            if(m instanceof TextMessage t) received.offer(t.getText().getBytes(java.nio.charset.StandardCharsets.UTF_8));
-                            else if(m.hasAttachment()) { var b=m.getAttachmentByteBuffer(); byte[] bytes=new byte[b.remaining()]; b.get(bytes); received.offer(bytes); }
-                            else received.offer(m.getBytes());
+                            byte[] bytes;
+                            if(m instanceof TextMessage t) bytes=t.getText().getBytes(StandardCharsets.UTF_8);
+                            else if(m.hasAttachment()) { var b=m.getAttachmentByteBuffer(); bytes=new byte[b.remaining()]; b.get(bytes); }
+                            else bytes=m.getBytes();
+                            if(received.putIfAbsent(m.getDestination().getName(),bytes)==null) latch.countDown();
                         }
                     } catch(Exception error) { throw new RuntimeException(error); }
                 }
                 public void onException(JCSMPException error) { throw new RuntimeException(error); }
             });
-            session.addSubscription(JCSMPFactory.onlyInstance().createTopic(System.getenv().getOrDefault("SOLACE_OUTPUT_TOPIC","mi/{{ name }}/out")),true);
+            for(String topic:topics) session.addSubscription(JCSMPFactory.onlyInstance().createTopic(topic),true);
             consumer.start();
+            byte[] input=Base64.getDecoder().decode(example.get("input_base64").asText());
+{% if webhook == 'stripe' %}
+            var client=HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(5)).build();
+            String url=System.getenv().getOrDefault("MI_SMOKE_HTTP","http://localhost:18080/ingest");
+            // The real HTTP endpoint must reject unsigned events before publishing anything.
+            var unsigned=client.send(HttpRequest.newBuilder(URI.create(url)).timeout(java.time.Duration.ofSeconds(10))
+                .header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofByteArray(input)).build(),HttpResponse.BodyHandlers.ofString());
+            assertEquals(422,unsigned.statusCode(),"Unsigned webhook was not rejected");
+            String timestamp=Long.toString(java.time.Instant.now().getEpochSecond());
+            String secret=System.getenv("STRIPE_WEBHOOK_SECRET");
+            assertNotNull(secret,"Configure STRIPE_WEBHOOK_SECRET in .env");
+            Mac mac=Mac.getInstance("HmacSHA256");
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8),"HmacSHA256"));
+            mac.update((timestamp+".").getBytes(StandardCharsets.UTF_8));
+            String signature="t="+timestamp+",v1="+HexFormat.of().formatHex(mac.doFinal(input));
+            var request=HttpRequest.newBuilder(URI.create(url)).timeout(java.time.Duration.ofSeconds(15))
+                .header("Content-Type","application/json").header("Stripe-Signature",signature).header("mi_correlation_id",trace)
+                .POST(HttpRequest.BodyPublishers.ofByteArray(input)).build();
+            var response=client.send(request,HttpResponse.BodyHandlers.ofString());
+            assertEquals(202,response.statusCode(),"Signed webhook failed: "+response.body());
+{% else %}
             var producer=session.getMessageProducer(new JCSMPStreamingPublishEventHandler() {
                 public void responseReceived(String id) {}
                 public void handleError(String id,JCSMPException error,long timestamp) { throw new RuntimeException(error); }
             });
             var message=JCSMPFactory.onlyInstance().createMessage(BytesMessage.class);
-            message.writeBytes(Base64.getDecoder().decode(example.get("input_base64").asText()));
+            message.writeBytes(input);
             message.setDeliveryMode(DeliveryMode.PERSISTENT);
-            var headers=JCSMPFactory.onlyInstance().createMap(); headers.putString("mi_correlation_id",trace);
+            var headers=JCSMPFactory.onlyInstance().createMap();
             if(example.has("headers")) for(var e:example.get("headers").properties()) headers.putString(e.getKey(),e.getValue().asText());
+            headers.putString("mi_correlation_id",trace);
             message.setProperties(headers);
             producer.send(message,JCSMPFactory.onlyInstance().createTopic(System.getenv().getOrDefault("SOLACE_INPUT_TOPIC","mi/{{ name }}/in")));
-            byte[] result=received.poll(30,TimeUnit.SECONDS);
-            assertNotNull(result,"No correlated result from the running MI within 30 seconds");
-            assertArrayEquals(Base64.getDecoder().decode(example.get("output_base64").asText()),result);
+{% endif %}
+            assertTrue(latch.await(30,TimeUnit.SECONDS),"Missing correlated results on topics: "+topics+"; received: "+received.keySet());
+            for(String topic:topics) assertArrayEquals(Base64.getDecoder().decode(example.get("output_base64").asText()),received.get(topic),topic);
         } finally { session.closeSession(); }
     }
 }

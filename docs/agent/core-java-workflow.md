@@ -11,4 +11,8 @@ The fast path builds src/main/java/com/solace/mi/Core.java and a standard runnab
 
 The runtime uses the Solace MDK 4.3.11 dependency platform, Spring Boot 4, Jackson 3 (`tools.jackson.databind`, `JsonMapper.builder().build()`), Spring Cloud Stream, and Java 17. It deliberately avoids the stock connector workflow engine because this v1 has its own function. Optional libraries: networknt JSON Schema 3.0.8, Avro 1.12.2, protobuf-java 4.35.1. JDK XML validation is XSD 1.0. Do not invent library APIs; verify signatures and compile.
 
+For fan-out, Core sets `headers.put("mi_output_topics", List.of("topic/one", "topic/two"))`; the fixed runtime publishes to every concrete topic, up to sixteen. Include `output_topics` on successful examples so the contract and broker tests check routes as well as bytes. Incoming transport headers cannot set routing controls.
+
+For Stripe webhooks, set `webhook: "stripe"` in the spec. The fixed transport authenticates raw HTTP bytes using STRIPE_WEBHOOK_SECRET and a five-minute timestamp tolerance, and disables broker ingress. Keep Core.java focused on JSON validation and routing. Contract examples remain unsigned JSON; the generated broker smoke sends a signed HTTP request, rejects unsigned input, and checks all expected output topics. Use snapshot events by default and state topic mappings, retry/duplicate behavior, and the HTTPS/signing-secret setup prerequisite. Do not ask for topic names or an example before making a useful v1 with stated defaults.
+
 No credentials belong in Core.java, the JSON spec, sample payloads, or the zip. Configuration is supplied through .env at runtime. Reuse the currently working SAP AI Core routing in Claude Code.

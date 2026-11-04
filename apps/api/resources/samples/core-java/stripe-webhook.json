@@ -1,0 +1,42 @@
+{
+  "name": "stripe-customer-transactions-fanout",
+  "description": "Stripe signed webhooks to transaction and customer Solace topics",
+  "core_java": "package com.solace.mi;\n\nimport java.util.List;\nimport java.util.Map;\nimport java.util.regex.Pattern;\nimport tools.jackson.databind.JsonNode;\nimport tools.jackson.databind.ObjectMapper;\nimport tools.jackson.databind.json.JsonMapper;\n\npublic class Core {\n    private static final ObjectMapper MAPPER = JsonMapper.builder().build();\n    private static final Pattern TOPIC_SEGMENT = Pattern.compile(\"[A-Za-z0-9_.-]+\");\n\n    public byte[] process(byte[] payload, Map<String, Object> headers) throws Exception {\n        if (payload == null || payload.length == 0) {\n            throw new IllegalArgumentException(\"Stripe webhook payload must not be empty\");\n        }\n        if (headers == null) {\n            throw new IllegalArgumentException(\"headers must not be null\");\n        }\n\n        final JsonNode root;\n        try {\n            root = MAPPER.readTree(payload);\n        } catch (Exception e) {\n            throw new IllegalArgumentException(\"Stripe webhook payload must be valid JSON\", e);\n        }\n        if (root == null || !root.isObject()) {\n            throw new IllegalArgumentException(\"Stripe webhook payload must be a JSON object\");\n        }\n\n        String eventId = requiredText(root, \"id\", \"Stripe event id\");\n        String eventType = requiredText(root, \"type\", \"Stripe event type\");\n        JsonNode data = root.get(\"data\");\n        if (data == null || !data.isObject()) {\n            throw new IllegalArgumentException(\"Stripe event data must be an object\");\n        }\n        JsonNode transaction = data.get(\"object\");\n        if (transaction == null || !transaction.isObject()) {\n            throw new IllegalArgumentException(\"Stripe event data.object must be an expanded snapshot object\");\n        }\n\n        String customerId = customerId(transaction.get(\"customer\"));\n        validateTopicSegment(eventType, \"event type\");\n        validateTopicSegment(customerId, \"customer id\");\n\n        String typeTopic = \"stripe/transactions/\" + eventType;\n        String customerTopic = \"stripe/customers/\" + customerId + \"/transactions\";\n        validateTopic(typeTopic);\n        validateTopic(customerTopic);\n\n        headers.put(\"stripe_event_id\", eventId);\n        headers.put(\"stripe_event_type\", eventType);\n        headers.put(\"mi_output_topics\", List.of(typeTopic, customerTopic));\n        return payload;\n    }\n\n    private static String requiredText(JsonNode object, String field, String label) {\n        JsonNode value = object.get(field);\n        if (value == null || !value.isTextual() || value.textValue().isEmpty()) {\n            throw new IllegalArgumentException(label + \" must be a non-empty string\");\n        }\n        return value.textValue();\n    }\n\n    private static String customerId(JsonNode customer) {\n        if (customer == null || customer.isNull()) {\n            return \"unknown\";\n        }\n        if (customer.isTextual()) {\n            if (customer.textValue().isEmpty()) {\n                return \"unknown\";\n            }\n            return customer.textValue();\n        }\n        if (customer.isObject()) {\n            JsonNode id = customer.get(\"id\");\n            if (id == null || id.isNull()) {\n                return \"unknown\";\n            }\n            if (!id.isTextual()) {\n                throw new IllegalArgumentException(\"Expanded Stripe customer id must be a string\");\n            }\n            return id.textValue().isEmpty() ? \"unknown\" : id.textValue();\n        }\n        throw new IllegalArgumentException(\"Stripe customer must be a string, an expanded object, or null\");\n    }\n\n    private static void validateTopicSegment(String value, String label) {\n        if (!TOPIC_SEGMENT.matcher(value).matches()) {\n            throw new IllegalArgumentException(\"Stripe \" + label + \" contains characters unsafe for a Solace topic segment\");\n        }\n    }\n\n    private static void validateTopic(String topic) {\n        if (topic.length() > 250) {\n            throw new IllegalArgumentException(\"Generated Solace topic exceeds 250 characters\");\n        }\n    }\n}\n",
+  "examples": [
+    {
+      "headers": {
+        "stripe_event_id": "evt_1SucceededDemo",
+        "stripe_event_type": "payment_intent.succeeded"
+      },
+      "output_topics": [
+        "stripe/transactions/payment_intent.succeeded",
+        "stripe/customers/cus_1CustomerDemo/transactions"
+      ],
+      "input_base64": "eyJpZCI6ImV2dF8xU3VjY2VlZGVkRGVtbyIsIm9iamVjdCI6ImV2ZW50IiwiYXBpX3ZlcnNpb24iOiIyMDI1LTAyLTI0LmFjYWNpYSIsImNyZWF0ZWQiOjE3NDEwMDAwMDAsImxpdmVtb2RlIjpmYWxzZSwidHlwZSI6InBheW1lbnRfaW50ZW50LnN1Y2NlZWRlZCIsImRhdGEiOnsib2JqZWN0Ijp7ImlkIjoicGlfMVN1Y2NlZWRlZERlbW8iLCJvYmplY3QiOiJwYXltZW50X2ludGVudCIsImFtb3VudCI6MjUwMCwiY3VycmVuY3kiOiJ1c2QiLCJjdXN0b21lciI6ImN1c18xQ3VzdG9tZXJEZW1vIiwic3RhdHVzIjoic3VjY2VlZGVkIn19fQ==",
+      "output_base64": "eyJpZCI6ImV2dF8xU3VjY2VlZGVkRGVtbyIsIm9iamVjdCI6ImV2ZW50IiwiYXBpX3ZlcnNpb24iOiIyMDI1LTAyLTI0LmFjYWNpYSIsImNyZWF0ZWQiOjE3NDEwMDAwMDAsImxpdmVtb2RlIjpmYWxzZSwidHlwZSI6InBheW1lbnRfaW50ZW50LnN1Y2NlZWRlZCIsImRhdGEiOnsib2JqZWN0Ijp7ImlkIjoicGlfMVN1Y2NlZWRlZERlbW8iLCJvYmplY3QiOiJwYXltZW50X2ludGVudCIsImFtb3VudCI6MjUwMCwiY3VycmVuY3kiOiJ1c2QiLCJjdXN0b21lciI6ImN1c18xQ3VzdG9tZXJEZW1vIiwic3RhdHVzIjoic3VjY2VlZGVkIn19fQ=="
+    },
+    {
+      "headers": {
+        "stripe_event_id": "evt_1FailedDemo",
+        "stripe_event_type": "payment_intent.payment_failed"
+      },
+      "output_topics": [
+        "stripe/transactions/payment_intent.payment_failed",
+        "stripe/customers/cus_2ExpandedDemo/transactions"
+      ],
+      "input_base64": "eyJpZCI6ImV2dF8xRmFpbGVkRGVtbyIsIm9iamVjdCI6ImV2ZW50IiwiYXBpX3ZlcnNpb24iOiIyMDI1LTAyLTI0LmFjYWNpYSIsImNyZWF0ZWQiOjE3NDEwMDAwNjAsImxpdmVtb2RlIjpmYWxzZSwidHlwZSI6InBheW1lbnRfaW50ZW50LnBheW1lbnRfZmFpbGVkIiwiZGF0YSI6eyJvYmplY3QiOnsiaWQiOiJwaV8xRmFpbGVkRGVtbyIsIm9iamVjdCI6InBheW1lbnRfaW50ZW50IiwiYW1vdW50Ijo0MjAwLCJjdXJyZW5jeSI6InVzZCIsImN1c3RvbWVyIjp7ImlkIjoiY3VzXzJFeHBhbmRlZERlbW8iLCJvYmplY3QiOiJjdXN0b21lciJ9LCJzdGF0dXMiOiJyZXF1aXJlc19wYXltZW50X21ldGhvZCIsImxhc3RfcGF5bWVudF9lcnJvciI6eyJjb2RlIjoiY2FyZF9kZWNsaW5lZCIsIm1lc3NhZ2UiOiJZb3VyIGNhcmQgd2FzIGRlY2xpbmVkLiJ9fX19",
+      "output_base64": "eyJpZCI6ImV2dF8xRmFpbGVkRGVtbyIsIm9iamVjdCI6ImV2ZW50IiwiYXBpX3ZlcnNpb24iOiIyMDI1LTAyLTI0LmFjYWNpYSIsImNyZWF0ZWQiOjE3NDEwMDAwNjAsImxpdmVtb2RlIjpmYWxzZSwidHlwZSI6InBheW1lbnRfaW50ZW50LnBheW1lbnRfZmFpbGVkIiwiZGF0YSI6eyJvYmplY3QiOnsiaWQiOiJwaV8xRmFpbGVkRGVtbyIsIm9iamVjdCI6InBheW1lbnRfaW50ZW50IiwiYW1vdW50Ijo0MjAwLCJjdXJyZW5jeSI6InVzZCIsImN1c3RvbWVyIjp7ImlkIjoiY3VzXzJFeHBhbmRlZERlbW8iLCJvYmplY3QiOiJjdXN0b21lciJ9LCJzdGF0dXMiOiJyZXF1aXJlc19wYXltZW50X21ldGhvZCIsImxhc3RfcGF5bWVudF9lcnJvciI6eyJjb2RlIjoiY2FyZF9kZWNsaW5lZCIsIm1lc3NhZ2UiOiJZb3VyIGNhcmQgd2FzIGRlY2xpbmVkLiJ9fX19"
+    },
+    {
+      "expected_error": true,
+      "input_base64": "eyJpZCI6ImV2dF9pbnZhbGlkIiwib2JqZWN0IjoiZXZlbnQiLCJ0eXBlIjoicGF5bWVudF9pbnRlbnQuc3VjY2VlZGVkIiwiZGF0YSI6e319"
+    }
+  ],
+  "webhook": "stripe",
+  "assumptions": [
+    "Stripe sends snapshot event payloads, not thin event notifications.",
+    "Events with no customer value are routed under customer id 'unknown'.",
+    "Every valid event is published to both stripe/transactions/{event_type} and stripe/customers/{customer_id}/transactions.",
+    "Stripe retries can cause duplicate output messages; downstream consumers should deduplicate using stripe_event_id."
+  ]
+}

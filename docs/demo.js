@@ -34,6 +34,7 @@
         body: JSON.stringify({ messages: history.slice(-16), coreJava: previousCore }) });
       var data = await response.json();
       if (!response.ok) throw new Error(data.error || data.detail || 'The build service is unavailable.');
+      if (data.status === 'build_failed') throw new Error(data.content || 'The build could not finish. Please retry this request.');
       if (thisSession !== session) return;
       append('assistant', data.content || 'Please describe your expected input and output.'); history.push({ role: 'assistant', content: data.content || 'Please describe your expected input and output.' });
       if (data.project) {

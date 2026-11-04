@@ -17,11 +17,36 @@ Docker builds and runs the MI and a local broker; host Java and Maven are option
 
 To stop the demo: `docker compose -f compose.yaml -f compose.demo.yaml down`. Demo broker credentials are default/default and management is admin/admin; the demo broker is not exposed on host ports.
 
+{% if webhook == 'stripe' %}
+## Connect Stripe
+
+The local demo uses a clearly marked fixture signing key. Its smoke test sends a signed HTTP webhook to `/ingest`, then checks delivery on **every expected Solace topic**. It also checks that an unsigned HTTP webhook is rejected. This proves local signed intake and routing using synthetic events; it does not contact your Stripe account.
+
+To receive events from your Stripe test account, [install and authenticate the Stripe CLI](https://docs.stripe.com/stripe-cli), then run:
+
+```bash
+stripe listen --events payment_intent.succeeded,payment_intent.payment_failed --forward-to http://localhost:18080/ingest
+```
+
+Copy the `whsec_...` signing secret printed by that command into **STRIPE_WEBHOOK_SECRET in .env**. Keep `stripe listen` running. In another terminal, apply the secret and trigger an event:
+
+```bash
+./scripts/install.sh --demo
+stripe trigger payment_intent.succeeded
+```
+
+The listener must use the port set by MI_HTTP_PORT (default 18080). For deployed Stripe delivery, register your own publicly reachable **HTTPS /ingest** endpoint and use that endpoint's signing secret from Stripe. A reverse proxy can forward HTTPS to the local HTTP endpoint; this package does not provision hosting, DNS, or certificates. Snapshot event payloads are the default; thin events require explicit enrichment.
+
+The fixed transport verifies HMAC-SHA256 on raw request bytes, accepts valid `v1` signatures, and checks a five-minute timestamp tolerance before invoking Core.java. Missing, changed, invalid, and stale signatures are rejected. A missing signing secret fails closed. Broker input is disabled in this webhook project; all event intake uses the signed HTTP endpoint.
+
+Core.java sets `mi_output_topics` to the concrete topic list. The returned bytes are sent to each topic with Stripe event ID/type properties. Default mappings and examples appear in generation.json and core-examples.json. Stripe retries can produce duplicate outputs, and partial fan-out failures can duplicate an earlier publication on retry. Downstream consumers should deduplicate using stripe_event_id; this v1 does not provide a durable deduplication store or atomic multi-topic fan-out.
+{% endif %}
+
 ## Connect an existing broker
 
 Run `./scripts/install.sh` once to create `.env`. Set the SMF endpoint, VPN, credentials, and topics there, then run it again. Input clients need permission to create/bind the durable queue and its error queue. Use a TLS endpoint and trusted certificates for remote services. Keep input and output topics separate. Run `./scripts/smoke.sh` to verify the configured broker.
 
-Messages arrive through the input topic or HTTP POST /ingest. Core.java receives raw bytes plus a mutable map of message properties and returns output bytes; IllegalArgumentException rejects input. An HTTP 202 means the binder accepted publication, so use the smoke test to verify delivery. This v1 does not establish exactly-once delivery or a production throughput limit.
+{% if webhook == 'stripe' %}Messages arrive through signed HTTP POST /ingest; broker input is disabled.{% else %}Messages arrive through the input topic or HTTP POST /ingest.{% endif %} Core.java receives raw bytes plus a mutable map of message properties and returns output bytes; IllegalArgumentException rejects input. Set `headers.put("mi_output_topics", List.of("topic/one", "topic/two"))` to fan out to up to sixteen concrete topics. The default output binding is used when no route list is set. An HTTP 202 means the binder accepted publication, so use the smoke test to verify delivery. This v1 does not establish exactly-once delivery or a production throughput limit.
 
 ## Change the core
 

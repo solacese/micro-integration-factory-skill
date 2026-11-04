@@ -78,10 +78,12 @@ class SapAiCoreProvider:
             "model": model,
             "instructions": "\n".join(instructions),
             "input": inputs,
-            "max_output_tokens": 8000,
+            "max_output_tokens": 12000,
             "reasoning": {"effort": "medium"},
             "tools": [{"type": "function", **tool["function"]} for tool in tools],
         }
+        if len(tools) == 1 and tools[0]["function"]["name"] == "build_v1":
+            body["tool_choice"] = {"type": "function", "name": "build_v1"}
         for attempt in range(2):
             token = self._access_token(refresh=attempt > 0)
             response = self.client.post(

@@ -306,3 +306,135 @@ def test_core_download_compiles_and_executes_contract_examples(tmp_path):
     )
     assert completed.returncode == 0, completed.stdout[-10000:] + completed.stderr[-1000:]
     assert (tmp_path / "upper-case-mi-v1/target/mi.jar").is_file()
+
+
+def test_stripe_webhook_project_uses_signed_http_intake_and_topic_contracts():
+    candidate = spec()
+    candidate["webhook"] = "stripe"
+    candidate["examples"][0]["output_topics"] = [
+        "stripe/transactions/succeeded",
+        "stripe/customers/cus_1/transactions",
+    ]
+    result = create_core_project(candidate)
+    with zipfile.ZipFile(io.BytesIO(base64.b64decode(result["zipBase64"]))) as archive:
+
+        def read(relative):
+            return archive.read("upper-case-mi-v1/" + relative).decode()
+
+        config = read("src/main/resources/application.yml")
+        assert "definition: ''" in config and "autodetect: false" in config
+        assert "          destination: ${SOLACE_INPUT_TOPIC:" not in config
+        assert "webhook-provider: stripe" in config
+        assert "STRIPE_WEBHOOK_SECRET=replace-me" in read(".env.example")
+        smoke = read("src/test/java/com/solace/mi/BrokerRoundTripIT.java")
+        assert "Stripe-Signature" in smoke and "unsigned.statusCode()" in smoke
+        assert "for(String topic:topics) assertArrayEquals" in smoke
+        assert "producer.send(" not in smoke
+        assert "stripe listen" in read("README.md")
+        assert json.loads(read("generation.json"))["webhook"] == "stripe"
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"webhook": "unknown"},
+        {"examples": [{"input": "hello", "output": "HELLO", "output_topics": ["stripe/>"]}]},
+        {"examples": [{"input": "hello", "output": "HELLO", "output_topics": []}]},
+    ],
+)
+def test_invalid_webhook_or_route_contract_is_rejected(change):
+    candidate = spec()
+    candidate.update(change)
+    with pytest.raises(ValueError):
+        create_core_project(candidate)
+
+
+def test_research_loops_are_cut_short_to_reserve_a_build(monkeypatch):
+    monkeypatch.setattr(advisor_service, "research", lambda *a, **kw: [])
+
+    class Provider:
+        rounds = 0
+
+        def complete(self, messages, tools):
+            self.rounds += 1
+            if self.rounds <= 2:
+                name, arguments = "research", {"query": "Solace routing"}
+            else:
+                assert [t["function"]["name"] for t in tools] == ["build_v1"]
+                name, arguments = "build_v1", spec()
+            return {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": str(self.rounds),
+                        "function": {"name": name, "arguments": json.dumps(arguments)},
+                    }
+                ],
+            }
+
+    provider = Provider()
+    result = advisor_service.AdvisorService(provider).respond(
+        [{"role": "user", "content": "Route events to multiple topics"}]
+    )
+    assert result["status"] == "generated" and provider.rounds == 3
+
+
+def test_packaging_failures_are_repaired_instead_of_asking_to_narrow_the_request(monkeypatch):
+    monkeypatch.setattr(advisor_service, "research", lambda *a, **kw: [])
+
+    class Provider:
+        rounds = 0
+
+        def complete(self, messages, tools):
+            self.rounds += 1
+            candidate = spec()
+            if self.rounds == 1:
+                candidate["examples"] = []
+            else:
+                assert any(
+                    "Correct the tool input" in m.get("content", "")
+                    for m in messages
+                    if m["role"] == "tool"
+                )
+            return {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": str(self.rounds),
+                        "function": {"name": "build_v1", "arguments": json.dumps(candidate)},
+                    }
+                ],
+            }
+
+    result = advisor_service.AdvisorService(Provider()).respond(
+        [{"role": "user", "content": "Uppercase text"}]
+    )
+    assert result["status"] == "generated"
+
+
+def test_exhausted_build_is_a_retryable_service_failure_not_a_missing_requirement(monkeypatch):
+    monkeypatch.setattr(advisor_service, "research", lambda *a, **kw: [])
+
+    class Provider:
+        def complete(self, messages, tools):
+            candidate = spec()
+            candidate["examples"] = []
+            return {
+                "role": "assistant",
+                "content": None,
+                "tool_calls": [
+                    {
+                        "id": str(len(messages)),
+                        "function": {"name": "build_v1", "arguments": json.dumps(candidate)},
+                    }
+                ],
+            }
+
+    result = advisor_service.AdvisorService(Provider()).respond(
+        [{"role": "user", "content": "Uppercase text"}]
+    )
+    assert result["status"] == "build_failed"
+    assert "you do not need to narrow" in result["content"]
+    assert result["project"] is None

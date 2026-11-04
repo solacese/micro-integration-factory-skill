@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 command -v docker >/dev/null
 docker info >/dev/null
@@ -13,6 +14,11 @@ if [[ ! -f .env ]]; then
 fi
 case "${1:-}" in
   --demo)
+{% if webhook == 'stripe' %}
+    # Local fixture key only. Replace it with the signing secret from Stripe before connecting Stripe.
+    sed 's/^STRIPE_WEBHOOK_SECRET=replace-me$/STRIPE_WEBHOOK_SECRET=whsec_local_demo_only/' .env > .env.tmp
+    mv .env.tmp .env
+{% endif %}
     docker compose -f compose.yaml -f compose.demo.yaml up -d --wait broker
     docker compose -f compose.yaml -f compose.demo.yaml exec -T broker curl -fsS -u admin:admin \
       -X PATCH http://localhost:8080/SEMP/v2/config/msgVpns/default/clientProfiles/default \

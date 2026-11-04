@@ -1,0 +1,72 @@
+package com.solace.mi;
+
+import java.util.*;
+import java.nio.charset.StandardCharsets;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import org.junit.jupiter.api.Test;
+import org.springframework.cloud.stream.function.StreamBridge;
+import org.springframework.messaging.Message;
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
+
+class TransportContractTest {
+    private static final byte[] PAYLOAD="{\"id\":\"evt_fixture\"}".getBytes(StandardCharsets.UTF_8);
+    private static final String SECRET="whsec_test_fixture_only";
+    private static final long NOW=1700000000;
+
+    private static String signature(long timestamp) throws Exception {
+        var mac=Mac.getInstance("HmacSHA256");
+        mac.init(new SecretKeySpec(SECRET.getBytes(StandardCharsets.UTF_8),"HmacSHA256"));
+        mac.update((timestamp+".").getBytes(StandardCharsets.UTF_8));
+        return "t="+timestamp+",v1="+HexFormat.of().formatHex(mac.doFinal(PAYLOAD));
+    }
+
+    @Test void stripeValidatesRawBytesAndSupportsMultipleV1Signatures() throws Exception {
+        String header=signature(NOW);
+        Application.verifyStripe(PAYLOAD,header,SECRET,NOW);
+        Application.verifyStripe(PAYLOAD,header+",v1="+"0".repeat(64),SECRET,NOW);
+        assertThrows(IllegalArgumentException.class,()->Application.verifyStripe("changed".getBytes(),header,SECRET,NOW));
+        assertThrows(IllegalArgumentException.class,()->Application.verifyStripe(PAYLOAD,header,"other-secret",NOW));
+        assertThrows(IllegalArgumentException.class,()->Application.verifyStripe(PAYLOAD,null,SECRET,NOW));
+        assertThrows(IllegalArgumentException.class,()->Application.verifyStripe(PAYLOAD,"t=x,v1=bad",SECRET,NOW));
+        assertThrows(IllegalArgumentException.class,()->Application.verifyStripe(PAYLOAD,signature(NOW-301),SECRET,NOW));
+        assertThrows(IllegalArgumentException.class,()->Application.verifyStripe(PAYLOAD,signature(NOW+301),SECRET,NOW));
+        assertThrows(IllegalStateException.class,()->Application.verifyStripe(PAYLOAD,header,"replace-me",NOW));
+    }
+
+    @Test void routingRequiresConcreteBoundedTopics() {
+        assertEquals(List.of("stripe/events","stripe/customers/cus_1"),Application.outputTopics(List.of("stripe/events","stripe/events","stripe/customers/cus_1")));
+        assertThrows(IllegalArgumentException.class,()->Application.outputTopics(List.of("stripe/>")));
+        assertThrows(IllegalArgumentException.class,()->Application.outputTopics(List.of("stripe/*")));
+        assertThrows(IllegalArgumentException.class,()->Application.outputTopics(List.of()));
+        assertThrows(IllegalArgumentException.class,()->Application.outputTopics("stripe/events"));
+    }
+
+    @Test void coreRoutesArePublishedAndIncomingRoutesCannotOverrideThem() throws Exception {
+        var core=mock(Core.class);
+        var bridge=mock(StreamBridge.class);
+        when(core.process(any(),anyMap())).thenAnswer(invocation -> {
+            Map<String,Object> headers=invocation.getArgument(1);
+            assertFalse(headers.containsKey("mi_output_topics"));
+            assertFalse(headers.containsKey("scst_targetDestination"));
+            headers.put("mi_output_topics",List.of("stripe/events","stripe/customers/cus_1"));
+            return PAYLOAD;
+        });
+        when(bridge.send(eq("output-out-0"),any())).thenReturn(true);
+        Application.forward(core,bridge,PAYLOAD,Map.of("mi_output_topics","attacker/topic","scst_targetDestination","attacker/topic"));
+        var captor=org.mockito.ArgumentCaptor.forClass(Message.class);
+        verify(bridge,times(2)).send(eq("output-out-0"),captor.capture());
+        assertEquals(List.of("stripe/events","stripe/customers/cus_1"),captor.getAllValues().stream().map(m -> m.getHeaders().get("scst_targetDestination")).toList());
+        when(bridge.send(eq("output-out-0"),any())).thenReturn(false);
+        assertThrows(IllegalStateException.class,()->Application.forward(core,bridge,PAYLOAD,Map.of()));
+    }
+
+    @Test void invalidSignatureNeverInvokesCoreOrPublisher() throws Exception {
+        var core=mock(Core.class);
+        var bridge=mock(StreamBridge.class);
+        var ingress=new Application.Ingress(core,bridge,"stripe",SECRET);
+        assertThrows(IllegalArgumentException.class,()->ingress.ingest(PAYLOAD,Map.of()));
+        verifyNoInteractions(core,bridge);
+    }
+}

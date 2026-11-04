@@ -46,7 +46,11 @@ CATALOG = [
         "Solace Spring Cloud Stream binder",
         "https://raw.githubusercontent.com/SolaceProducts/solace-spring-cloud/master/README.md",
     ),
-    ("Stripe webhook signatures retries events", "https://docs.stripe.com/webhooks"),
+    ("Stripe webhook setup retries snapshot events", "https://docs.stripe.com/webhooks.md"),
+    (
+        "Stripe webhook signatures raw payload timestamp HMAC",
+        "https://raw.githubusercontent.com/stripe/stripe-java/master/src/main/java/com/stripe/net/Webhook.java",
+    ),
     (
         "PostgreSQL logical decoding CDC replication",
         "https://www.postgresql.org/docs/current/logicaldecoding.html",
@@ -235,6 +239,13 @@ def research(query: str, limit=4) -> list[dict]:
         reverse=True,
     )
     candidates = list(ranked[:limit])
+    if "stripe" in words:
+        # Keep vendor setup, signature implementation, and actual routing APIs together.
+        candidates = [item for item in CATALOG if item[0].startswith("Stripe")]
+        candidates += [
+            item for item in CATALOG if item[0].startswith("Spring Cloud Stream dynamic")
+        ]
+        candidates = candidates[:limit]
     # Search adds discovery beyond the catalog; only verified primary-host pages
     # can enter evidence. Search snippets themselves are never treated as facts.
     try:
@@ -265,6 +276,8 @@ def research(query: str, limit=4) -> list[dict]:
             + " ".join(technologies[:6] or ["micro integration"])
             + " documentation site:docs.solace.com"
         )
+        if "stripe" in words:
+            search_query = "Stripe webhooks signature documentation site:docs.stripe.com"
         r = httpx.get(
             "https://www.bing.com/search?" + urlencode({"format": "rss", "q": search_query}),
             timeout=4,
@@ -273,7 +286,9 @@ def research(query: str, limit=4) -> list[dict]:
             for item in ET.fromstring(r.text).findall("./channel/item"):
                 url = item.findtext("link", "")
                 if allowed_url(url) and url not in {p[1] for p in candidates}:
-                    candidates.insert(0, (item.findtext("title", "Documentation"), url))
+                    # Curated vendor references are already direct primary sources.
+                    if "stripe" not in words:
+                        candidates.insert(0, (item.findtext("title", "Documentation"), url))
                     break
     except Exception:
         pass

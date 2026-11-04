@@ -76,3 +76,5 @@ PYTHONPATH=src uv run pytest -q
 Use Java 17+ and Maven to enable the generated-project compilation tests. The new tests exercise project packaging, contract execution, AI Core OAuth refresh and tool-call continuity, source provenance, blocked redirects, soft 404s, and truthful build states. Live AI and broker checks are separate from mocked provider tests.
 
 The old full control-plane UI and templates remain in `apps/web`, `apps/api`, and `archive/` for historical use; they are not the public v1 experience. The prior EC2 deployment remains retired. The current public advisor is a separate small deployment.
+
+Webhook requests such as “listen to Stripe webhooks and post customer transactions to multiple Solace topics” generate a v1 using stated topic defaults. Stripe projects include raw-body signature verification, HTTP-only intake, signed local fixtures, and a broker test that checks every expected destination. The download explains local Stripe CLI setup and the HTTPS/signing-secret requirements for connecting a real account. Multi-topic fan-out is not atomic, and downstream consumers must handle duplicate events.

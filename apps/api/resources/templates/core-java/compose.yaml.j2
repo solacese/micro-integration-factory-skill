@@ -29,4 +29,5 @@ services:
     environment:
       MAVEN_CONFIG: /tmp/.m2
       MI_SMOKE_BROKER: ${SOLACE_BROKER_URL:-tcp://host.docker.internal:55555}
+      MI_SMOKE_HTTP: http://integration:8080/ingest
     command: ["mvn", "-B", "-Duser.home=/tmp", "-Dmaven.repo.local=/tmp/.m2/repository", "verify"]

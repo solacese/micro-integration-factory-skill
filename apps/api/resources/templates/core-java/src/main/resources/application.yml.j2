@@ -5,17 +5,21 @@ spring:
     name: {{ name }}
   cloud:
     function:
-      definition: process
+      definition: {{ "''" if webhook == 'stripe' else 'process' }}
     stream:
+      function:
+        autodetect: false
       default-binder: solace
       output-bindings: output-out-0
       bindings:
+{% if webhook != 'stripe' %}
         process-in-0:
           destination: ${SOLACE_INPUT_TOPIC:mi/{{ name }}/in}
           group: ${SOLACE_QUEUE_GROUP:{{ name }}}
           consumer:
             use-native-decoding: true
             max-attempts: 3
+{% endif %}
         output-out-0:
           destination: ${SOLACE_OUTPUT_TOPIC:mi/{{ name }}/out}
           producer:
@@ -34,6 +38,9 @@ solace:
     msgVpn: ${SOLACE_VPN:default}
     clientUsername: ${SOLACE_USERNAME:default}
     clientPassword: ${SOLACE_PASSWORD:default}
+mi:
+  webhook-provider: {{ webhook }}
+  stripe-webhook-secret: ${STRIPE_WEBHOOK_SECRET:}
 management:
   endpoints:
     web:
