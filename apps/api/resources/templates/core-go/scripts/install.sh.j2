@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export MI_RUN_UID="$(id -u)" MI_RUN_GID="$(id -g)"
+docker info >/dev/null
+docker compose version >/dev/null
+case "${1:-}" in
+ --demo)
+  sed -e 's#smf-url: .*#smf-url: "tcp://broker:55555"#' \
+      -e 's#amqp-url: .*#amqp-url: "amqp://broker:5672"#' \
+      -e 's#  username: .*#  username: "default"#' \
+      -e 's#  password: .*#  password: "default"#' \
+      -e 's#signing-secret: "replace-me"#signing-secret: "whsec_local_demo_only"#' \
+      config/mi-config.yaml > config/mi-demo.yaml
+  docker compose -f compose.yaml -f compose.demo.yaml up -d --wait broker
+  docker compose -f compose.yaml -f compose.demo.yaml exec -T broker curl -fsS -u admin:admin \
+    -X PATCH http://localhost:8080/SEMP/v2/config/msgVpns/default/clientUsernames/default \
+    -H 'Content-Type: application/json' -d '{"password":"default","enabled":true}' >/dev/null
+  docker compose -f compose.yaml -f compose.demo.yaml exec -T broker curl -fsS -u admin:admin \
+    -X PATCH http://localhost:8080/SEMP/v2/config/msgVpns/default \
+    -H 'Content-Type: application/json' -d '{"authenticationBasicType":"internal"}' >/dev/null
+  docker compose -f compose.yaml -f compose.demo.yaml exec -T broker curl -fsS -u admin:admin \
+    -X PATCH http://localhost:8080/SEMP/v2/config/msgVpns/default/clientProfiles/default \
+    -H 'Content-Type: application/json' \
+    -d '{"allowGuaranteedMsgSendEnabled":true,"allowGuaranteedMsgReceiveEnabled":true,"allowGuaranteedEndpointCreateEnabled":true}' >/dev/null
+  docker compose -f compose.yaml -f compose.demo.yaml up -d --build --wait integration
+  echo 'Go MI ready. Run ./scripts/smoke.sh --demo to verify actual broker delivery.'
+  ;;
+ "") docker compose up -d --build --wait integration ;;
+ *) echo 'Usage: ./scripts/install.sh [--demo]' >&2; exit 2 ;;
+esac

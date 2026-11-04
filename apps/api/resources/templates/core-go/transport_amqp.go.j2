@@ -1,0 +1,145 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"github.com/Azure/go-amqp"
+	"sync"
+	"time"
+)
+
+type amqpPublisher struct{ sender *amqp.Sender }
+
+func (p *amqpPublisher) publish(ctx context.Context, payload []byte, headers map[string]any, topics []string) error {
+	sender := p.sender
+
+	receipts := make([]amqp.SendReceipt, 0, len(topics))
+	for _, topic := range topics {
+		if !validTopic(topic) {
+			return fmt.Errorf("%w: invalid output topic", ErrInvalidInput)
+		}
+		destination := "topic://" + topic
+		msg := amqp.NewMessage(payload)
+		msg.Header = &amqp.MessageHeader{Durable: true}
+		msg.Properties = &amqp.MessageProperties{To: &destination}
+		msg.ApplicationProperties = headers
+		receipt, err := sender.SendWithReceipt(ctx, msg, nil)
+		if err != nil {
+			return ErrUnavailable
+		}
+		receipts = append(receipts, receipt)
+	}
+	for _, receipt := range receipts {
+		state, err := receipt.Wait(ctx)
+		if err != nil {
+			return ErrUnavailable
+		}
+		if _, ok := state.(*amqp.StateAccepted); !ok {
+			return ErrUnavailable
+		}
+	}
+	return nil
+}
+func (b *brokerTransport) connected(ctx context.Context) error {
+	connectCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	conn, err := amqp.Dial(connectCtx, b.config.Broker.AMQPURL, &amqp.ConnOptions{SASLType: amqp.SASLTypePlain(b.config.Broker.Username, b.config.Broker.Password), IdleTimeout: 30 * time.Second})
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	session, err := conn.NewSession(connectCtx, nil)
+	if err != nil {
+		return err
+	}
+	sender, err := session.NewSender(connectCtx, "", nil)
+	if err != nil {
+		return err
+	}
+	var receiver *amqp.Receiver
+	if b.config.Webhook.Provider != "stripe" {
+		errorEndpoint, err := session.NewReceiver(connectCtx, "dsub://"+b.config.Messaging.ErrorTopic, &amqp.ReceiverOptions{Name: b.config.Messaging.Subscription + "-errors", SourceDurability: amqp.DurabilityConfiguration, SourceExpiryPolicy: amqp.ExpiryPolicyNever, Credit: -1})
+		if err != nil {
+			return err
+		}
+		if err = errorEndpoint.Close(connectCtx); err != nil {
+			return err
+		}
+		receiver, err = session.NewReceiver(connectCtx, "dsub://"+b.config.Messaging.InputTopic, &amqp.ReceiverOptions{Name: b.config.Messaging.Subscription, SourceDurability: amqp.DurabilityConfiguration, SourceExpiryPolicy: amqp.ExpiryPolicyNever, Credit: 64, MaxMessageSize: 1 << 20})
+		if err != nil {
+			return err
+		}
+	}
+	b.mu.Lock()
+	b.publisher = &amqpPublisher{sender: sender}
+	b.ready = true
+	b.mu.Unlock()
+	if receiver == nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-conn.Done():
+			return ErrUnavailable
+		}
+	}
+	jobs := make(chan *amqp.Message, 32)
+	workCtx, stop := context.WithCancel(ctx)
+	defer stop()
+	var workers sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for msg := range jobs {
+				b.consume(workCtx, receiver, msg)
+			}
+		}()
+	}
+	defer workers.Wait()
+	defer close(jobs)
+	for {
+		msg, err := receiver.Receive(workCtx, nil)
+		if err != nil {
+			return err
+		}
+		select {
+		case jobs <- msg:
+		case <-workCtx.Done():
+			return workCtx.Err()
+		}
+	}
+}
+func (b *brokerTransport) consume(ctx context.Context, receiver *amqp.Receiver, msg *amqp.Message) {
+	headers := safeHeaders(msg.ApplicationProperties)
+	payload := msg.GetData()
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		processing, cancel := context.WithTimeout(ctx, 15*time.Second)
+		_, err = b.process(processing, payload, headers)
+		cancel()
+		if err == nil {
+			ack, cancel := context.WithTimeout(ctx, 5*time.Second)
+			defer cancel()
+			_ = receiver.AcceptMessage(ack, msg)
+			return
+		}
+		if errors.Is(err, ErrInvalidInput) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Duration(attempt+1) * 200 * time.Millisecond):
+		}
+	}
+	// A durable error topic endpoint is provisioned before input consumption starts.
+	failure, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	headers["mi_error"] = "processing_failed"
+	if b.publish(failure, payload, headers, []string{b.config.Messaging.ErrorTopic}) == nil {
+		_ = receiver.AcceptMessage(failure, msg)
+	} else {
+		_ = receiver.ReleaseMessage(failure, msg)
+	}
+}

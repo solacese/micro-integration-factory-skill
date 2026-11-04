@@ -1,0 +1,129 @@
+package main
+
+import (
+	"context"
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+)
+
+func correlationID() string {
+	var value [16]byte
+	if _, err := rand.Read(value[:]); err != nil {
+		panic("random source unavailable")
+	}
+	return hex.EncodeToString(value[:])
+}
+func stripeSignature(payload []byte, signature, secret string, now int64) error {
+	if secret == "" || secret == "replace-me" {
+		return ErrUnavailable
+	}
+	if len(signature) == 0 || len(signature) > 4096 {
+		return ErrInvalidInput
+	}
+	timestamp := ""
+	candidates := []string{}
+	for _, item := range strings.Split(signature, ",") {
+		parts := strings.SplitN(strings.TrimSpace(item), "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		switch parts[0] {
+		case "t":
+			if timestamp != "" {
+				return ErrInvalidInput
+			}
+			timestamp = parts[1]
+		case "v1":
+			candidates = append(candidates, parts[1])
+		}
+	}
+	signedAt, err := strconv.ParseInt(timestamp, 10, 64)
+	if err != nil || signedAt < now-300 || signedAt > now+300 {
+		return ErrInvalidInput
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(timestamp + "."))
+	_, _ = mac.Write(payload)
+	expected := mac.Sum(nil)
+	for _, candidate := range candidates {
+		actual, err := hex.DecodeString(candidate)
+		if err == nil && hmac.Equal(actual, expected) {
+			return nil
+		}
+	}
+	return ErrInvalidInput
+}
+func jsonReply(w http.ResponseWriter, status int, value any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(value)
+}
+func (b *brokerTransport) handler() http.Handler {
+	mux := http.NewServeMux()
+	slots := make(chan struct{}, 64)
+	mux.HandleFunc("/actuator/health", func(w http.ResponseWriter, r *http.Request) {
+		if b.isReady() {
+			jsonReply(w, 200, map[string]string{"status": "UP"})
+		} else {
+			jsonReply(w, 503, map[string]string{"status": "DOWN"})
+		}
+	})
+	mux.HandleFunc("/ingest", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" {
+			w.Header().Set("Allow", "POST")
+			jsonReply(w, 405, map[string]string{"status": "method_not_allowed"})
+			return
+		}
+		select {
+		case slots <- struct{}{}:
+			defer func() { <-slots }()
+		default:
+			jsonReply(w, 429, map[string]string{"status": "busy"})
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
+		payload, err := io.ReadAll(r.Body)
+		if err != nil {
+			jsonReply(w, 413, map[string]string{"status": "payload_too_large"})
+			return
+		}
+		if b.config.Webhook.Provider == "stripe" {
+			if err = stripeSignature(payload, r.Header.Get("Stripe-Signature"), b.config.Webhook.SigningSecret, time.Now().Unix()); err != nil {
+				code := 422
+				if errors.Is(err, ErrUnavailable) {
+					code = 503
+				}
+				jsonReply(w, code, map[string]string{"status": "rejected"})
+				return
+			}
+		}
+		headers := make(map[string]any, len(r.Header))
+		for key, values := range r.Header {
+			if len(values) > 0 {
+				headers[strings.ToLower(key)] = values[0]
+			}
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+		trace, err := b.process(ctx, payload, headers)
+		if err != nil {
+			code := 503
+			if errors.Is(err, ErrInvalidInput) {
+				code = 422
+			}
+			jsonReply(w, code, map[string]string{"status": "processing_failed"})
+			return
+		}
+		jsonReply(w, 202, map[string]string{"status": "accepted", "correlationId": trace})
+	})
+	return mux
+}

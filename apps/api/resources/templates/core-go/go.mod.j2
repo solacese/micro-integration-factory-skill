@@ -1,0 +1,11 @@
+module {{ name }}
+
+go 1.26.0
+
+require (
+ github.com/Azure/go-amqp v1.7.0
+ go.yaml.in/yaml/v3 v3.0.6
+{% if transport == 'smf' %} solace.dev/go/messaging v1.10.1
+{% endif %}
+{% for module, version in dependencies %} {{ module }} {{ version }}
+{% endfor %})

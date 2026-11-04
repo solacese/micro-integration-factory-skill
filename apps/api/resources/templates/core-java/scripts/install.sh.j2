@@ -1,25 +1,38 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
+export MI_RUN_UID="$(id -u)" MI_RUN_GID="$(id -g)"
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 command -v docker >/dev/null
 docker info >/dev/null
 docker compose version >/dev/null
 if [[ ! -f .env ]]; then
   cp .env.example .env
-  if [[ "${1:-}" != --demo ]]; then
-    echo 'Created .env. Set your broker connection and credentials, then run this command again.'
+  if [[ "${1:-}" != --demo ]] && grep -q 'password: "replace-me"' config/mi-config.yaml; then
+    echo 'Complete config/mi-config.yaml with your credentials and broker endpoints, then run this command again.'
     exit 0
   fi
 fi
 case "${1:-}" in
   --demo)
+    sed -e 's#smf-url: .*#smf-url: "tcp://broker:55555"#' \
+        -e 's#amqp-url: .*#amqp-url: "amqp://broker:5672"#' \
+        -e 's#  username: .*#  username: "default"#' \
+        -e 's#  password: .*#  password: "default"#' \
+        -e 's#signing-secret: "replace-me"#signing-secret: "whsec_local_demo_only"#' \
+        config/mi-config.yaml > config/mi-demo.yaml
 {% if webhook == 'stripe' %}
     # Local fixture key only. Replace it with the signing secret from Stripe before connecting Stripe.
     sed 's/^STRIPE_WEBHOOK_SECRET=replace-me$/STRIPE_WEBHOOK_SECRET=whsec_local_demo_only/' .env > .env.tmp
     mv .env.tmp .env
 {% endif %}
     docker compose -f compose.yaml -f compose.demo.yaml up -d --wait broker
+    docker compose -f compose.yaml -f compose.demo.yaml exec -T broker curl -fsS -u admin:admin \
+      -X PATCH http://localhost:8080/SEMP/v2/config/msgVpns/default/clientUsernames/default \
+      -H 'Content-Type: application/json' -d '{"password":"default","enabled":true}' >/dev/null
+    docker compose -f compose.yaml -f compose.demo.yaml exec -T broker curl -fsS -u admin:admin \
+      -X PATCH http://localhost:8080/SEMP/v2/config/msgVpns/default \
+      -H 'Content-Type: application/json' -d '{"authenticationBasicType":"internal"}' >/dev/null
     docker compose -f compose.yaml -f compose.demo.yaml exec -T broker curl -fsS -u admin:admin \
       -X PATCH http://localhost:8080/SEMP/v2/config/msgVpns/default/clientProfiles/default \
       -H 'Content-Type: application/json' \

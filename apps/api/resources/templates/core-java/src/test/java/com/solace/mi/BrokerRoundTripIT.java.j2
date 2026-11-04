@@ -11,21 +11,33 @@ import com.solacesystems.jcsmp.*;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import tools.jackson.databind.json.JsonMapper;
+import org.springframework.boot.env.YamlPropertySourceLoader;
+import org.springframework.core.io.FileSystemResource;
 import static org.junit.jupiter.api.Assertions.*;
 
 @EnabledIfEnvironmentVariable(named="MI_SMOKE_BROKER", matches=".+")
 class BrokerRoundTripIT {
+    private static String config(String key, String fallback) throws Exception {
+        var path=System.getenv().getOrDefault("MI_TEST_CONFIG","config/mi-config.yaml");
+        var resource=new FileSystemResource(path);
+        if(!resource.exists()) return fallback;
+        for(var source:new YamlPropertySourceLoader().load("shared-mi",resource)) {
+            var value=source.getProperty(key);
+            if(value!=null) return value.toString();
+        }
+        return fallback;
+    }
     @Test void inputTraversesRunningMiAndReturnsOnEveryExpectedTopic() throws Exception {
         var examples=JsonMapper.builder().build().readTree(getClass().getResourceAsStream("/core-examples.json"));
         var example=examples.valueStream().filter(e -> e.has("output_base64")).findFirst().orElseThrow();
         List<String> topics=new ArrayList<>();
         if(example.has("output_topics")) example.get("output_topics").forEach(t -> topics.add(t.asText()));
-        else topics.add(System.getenv().getOrDefault("SOLACE_OUTPUT_TOPIC","mi/{{ name }}/out"));
+        else topics.add(config("messaging.output-topic","mi/{{ name }}/out"));
         var p=new JCSMPProperties();
-        p.setProperty(JCSMPProperties.HOST,System.getenv("MI_SMOKE_BROKER"));
-        p.setProperty(JCSMPProperties.VPN_NAME,System.getenv().getOrDefault("SOLACE_VPN","default"));
-        p.setProperty(JCSMPProperties.USERNAME,System.getenv().getOrDefault("SOLACE_USERNAME","default"));
-        p.setProperty(JCSMPProperties.PASSWORD,System.getenv().getOrDefault("SOLACE_PASSWORD","default"));
+        p.setProperty(JCSMPProperties.HOST,config("broker.smf-url","tcp://localhost:55555"));
+        p.setProperty(JCSMPProperties.VPN_NAME,config("broker.vpn","default"));
+        p.setProperty(JCSMPProperties.USERNAME,config("broker.username","default"));
+        p.setProperty(JCSMPProperties.PASSWORD,config("broker.password","default"));
         var session=JCSMPFactory.onlyInstance().createSession(p);
         var received=new ConcurrentHashMap<String,byte[]>();
         var latch=new CountDownLatch(topics.size());
@@ -57,7 +69,7 @@ class BrokerRoundTripIT {
                 .header("Content-Type","application/json").POST(HttpRequest.BodyPublishers.ofByteArray(input)).build(),HttpResponse.BodyHandlers.ofString());
             assertEquals(422,unsigned.statusCode(),"Unsigned webhook was not rejected");
             String timestamp=Long.toString(java.time.Instant.now().getEpochSecond());
-            String secret=System.getenv("STRIPE_WEBHOOK_SECRET");
+            String secret=config("webhook.signing-secret",System.getenv("STRIPE_WEBHOOK_SECRET"));
             assertNotNull(secret,"Configure STRIPE_WEBHOOK_SECRET in .env");
             Mac mac=Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8),"HmacSHA256"));
@@ -80,7 +92,7 @@ class BrokerRoundTripIT {
             if(example.has("headers")) for(var e:example.get("headers").properties()) headers.putString(e.getKey(),e.getValue().asText());
             headers.putString("mi_correlation_id",trace);
             message.setProperties(headers);
-            producer.send(message,JCSMPFactory.onlyInstance().createTopic(System.getenv().getOrDefault("SOLACE_INPUT_TOPIC","mi/{{ name }}/in")));
+            producer.send(message,JCSMPFactory.onlyInstance().createTopic(config("messaging.input-topic","mi/{{ name }}/in")));
 {% endif %}
             assertTrue(latch.await(30,TimeUnit.SECONDS),"Missing correlated results on topics: "+topics+"; received: "+received.keySet());
             for(String topic:topics) assertArrayEquals(Base64.getDecoder().decode(example.get("output_base64").asText()),received.get(topic),topic);

@@ -1,0 +1,83 @@
+package main
+
+import (
+	"errors"
+	"go.yaml.in/yaml/v3"
+	"net/url"
+	"os"
+	"regexp"
+	"strings"
+)
+
+type Config struct {
+	Broker struct {
+		SMFURL   string `yaml:"smf-url"`
+		AMQPURL  string `yaml:"amqp-url"`
+		VPN      string `yaml:"vpn"`
+		Username string `yaml:"username"`
+		Password string `yaml:"password"`
+	} `yaml:"broker"`
+	Messaging struct {
+		InputTopic   string `yaml:"input-topic"`
+		OutputTopic  string `yaml:"output-topic"`
+		Subscription string `yaml:"subscription"`
+		ErrorTopic   string `yaml:"error-topic"`
+	} `yaml:"messaging"`
+	Webhook struct {
+		Provider      string `yaml:"provider"`
+		SigningSecret string `yaml:"signing-secret"`
+	} `yaml:"webhook"`
+	Credentials map[string]string `yaml:"credentials"`
+}
+
+var topicPattern = regexp.MustCompile(`^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.-]+)*$`)
+var credentialPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]{1,80}$`)
+
+func validTopic(topic string) bool { return len(topic) <= 250 && topicPattern.MatchString(topic) }
+func loadConfig(path string) (Config, error) {
+	var config Config
+	file, err := os.Open(path)
+	if err != nil {
+		return config, errors.New("cannot open shared YAML config")
+	}
+	defer file.Close()
+	decoder := yaml.NewDecoder(file)
+	decoder.KnownFields(true)
+	if err = decoder.Decode(&config); err != nil {
+		return config, errors.New("invalid shared YAML config")
+	}
+	address := config.Broker.AMQPURL
+	validSchemes := []string{"amqp", "amqps"}
+	if wireProtocol == "smf" {
+		address = config.Broker.SMFURL
+		validSchemes = []string{"tcp", "tcps"}
+	}
+	endpoint, err := url.Parse(address)
+	if err != nil || endpoint.Hostname() == "" || (endpoint.Scheme != validSchemes[0] && endpoint.Scheme != validSchemes[1]) || endpoint.User != nil {
+		return config, errors.New("invalid endpoint for the selected transport")
+	}
+
+	if config.Broker.Username == "" || config.Broker.Password == "" || config.Broker.Password == "replace-me" {
+		return config, errors.New("complete broker credentials in config/mi-config.yaml")
+	}
+	if !validTopic(config.Messaging.InputTopic) || !validTopic(config.Messaging.OutputTopic) || !validTopic(config.Messaging.ErrorTopic) || config.Messaging.Subscription == "" {
+		return config, errors.New("invalid messaging topics/subscription")
+	}
+	if config.Webhook.Provider != "none" && config.Webhook.Provider != "stripe" {
+		return config, errors.New("unsupported webhook provider")
+	}
+	if config.Webhook.Provider == "stripe" && (config.Webhook.SigningSecret == "" || config.Webhook.SigningSecret == "replace-me") {
+		return config, errors.New("complete webhook.signing-secret in the shared YAML")
+	}
+	for key, value := range config.Credentials {
+		if !credentialPattern.MatchString(key) {
+			return config, errors.New("invalid credentials key")
+		}
+		if os.Getenv(key) == "" && strings.TrimSpace(value) != "" && value != "replace-me" {
+			if err = os.Setenv(key, value); err != nil {
+				return config, errors.New("cannot configure runtime credential")
+			}
+		}
+	}
+	return config, nil
+}

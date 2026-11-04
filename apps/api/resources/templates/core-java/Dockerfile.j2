@@ -1,7 +1,7 @@
 FROM maven:3.9.15-eclipse-temurin-17 AS build
 WORKDIR /workspace
 COPY . .
-RUN mvn -q verify && printf '%s\n' \
+RUN --mount=type=cache,target=/root/.m2 mvn -q verify && printf '%s\n' \
     'import java.net.URI; import java.net.http.*; public class Healthcheck { public static void main(String[] a) throws Exception { var r=HttpClient.newHttpClient().send(HttpRequest.newBuilder(URI.create("http://localhost:8080/actuator/health")).timeout(java.time.Duration.ofSeconds(2)).build(), HttpResponse.BodyHandlers.ofString()); if(r.statusCode()!=200 || !r.body().contains("UP")) System.exit(1); }}' \
     > /tmp/Healthcheck.java && javac /tmp/Healthcheck.java && jar cf /tmp/healthcheck.jar -C /tmp Healthcheck.class
 

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ "{{ transport }}" == smf ]]; then
+ docker build -t {{ name }}-go-mi:local .
+elif command -v go >/dev/null; then
+ go mod tidy
+ go test -race ./...
+ CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o mi .
+else
+ docker build -t {{ name }}-go-mi:local .
+fi

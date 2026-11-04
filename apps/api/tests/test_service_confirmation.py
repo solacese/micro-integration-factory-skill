@@ -23,6 +23,16 @@ def evidence(url="https://docs.stripe.com/webhooks.md"):
 
 @pytest.fixture
 def research(monkeypatch):
+    class UnitPackagingValidator:
+        def submit(self, project, sources=None):
+            return {
+                "status": "generated",
+                "project": project,
+                "sources": sources or [],
+                "content": "Unit packaging fixture; no runtime qualification claimed.",
+            }
+
+    monkeypatch.setattr(advisor_service, "ValidationService", UnitPackagingValidator)
     calls = []
     monkeypatch.setattr(advisor_service, "research", lambda *a, **kw: [evidence()])
 
@@ -37,7 +47,26 @@ def research(monkeypatch):
 
 class NoGeneration:
     def complete(self, messages, tools):
-        pytest.fail("The model must not generate code before service confirmation")
+        assert tools[0]["function"]["name"] == "choose_transport", (
+            "Code generation before confirmation"
+        )
+        return {
+            "role": "assistant",
+            "tool_calls": [
+                {
+                    "id": "design",
+                    "function": {
+                        "name": "choose_transport",
+                        "arguments": json.dumps(
+                            {
+                                "go_transport": "amqp",
+                                "reason": "Portable pure Go is sufficient for the requested routing.",
+                            }
+                        ),
+                    },
+                }
+            ],
+        }
 
 
 def test_stripe_is_verified_and_proposed_before_any_code_generation(research):

@@ -1,7 +1,6 @@
 package com.solace.mi;
 
 import java.util.*;
-import java.util.function.Consumer;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import javax.crypto.Mac;
@@ -9,35 +8,46 @@ import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.cloud.stream.function.StreamBridge;
+import org.springframework.boot.health.contributor.HealthIndicator;
+import org.springframework.boot.health.contributor.Health;
 import org.springframework.context.annotation.Bean;
+import org.springframework.core.env.Environment;
 import org.springframework.http.ResponseEntity;
-import org.springframework.messaging.Message;
-import org.springframework.messaging.support.MessageBuilder;
 import org.springframework.web.bind.annotation.*;
 
 /** Standard transport. Put business logic only in Core.java. */
 @SpringBootApplication
 public class Application {
-    private static final Set<String> INTERNAL_HEADERS = Set.of("id", "timestamp", "mi_output_topics", "scst_targetdestination", "stripe-signature", "mi_correlation_id");
+    private static final Set<String> INTERNAL_HEADERS = Set.of("id", "timestamp", "mi_output_topics", "scst_targetdestination", "stripe-signature", "mi_correlation_id", "deliveryattempt", "authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key");
     public static void main(String[] args) { SpringApplication.run(Application.class, args); }
 
-    @Bean Core core() { return new Core(); }
+    @Bean(destroyMethod="close") SmfOutputPublisher outputPublisher(Environment environment) throws com.solacesystems.jcsmp.JCSMPException {
+        return new SmfOutputPublisher(environment);
+    }
+    @Bean HealthIndicator outputHealth(SmfOutputPublisher publisher) { return () -> publisher.ready()?Health.up().build():Health.down().build(); }
 
-    @Bean Consumer<Message<byte[]>> process(Core core, StreamBridge bridge) {
-        return message -> forward(core, bridge, message.getPayload(), message.getHeaders());
+    @Bean Core core(Environment environment) {
+        for (String key : List.<String>of({% for variable in required_env %}{{ variable|tojson }}{{ ', ' if not loop.last else '' }}{% endfor %})) {
+            String value = environment.getProperty("credentials." + key);
+            if (value != null && !value.isBlank() && !value.equals("replace-me")) System.setProperty(key, value);
+        }
+        return new Core();
     }
 
-    static String forward(Core core, StreamBridge bridge, byte[] payload, Map<String, ?> incoming) {
+    @Bean(destroyMethod="close") SmfInputConsumer inputConsumer(SmfOutputPublisher publisher,Core core,Environment environment) throws com.solacesystems.jcsmp.JCSMPException { return new SmfInputConsumer(publisher,core,environment); }
+    @Bean HealthIndicator inputHealth(SmfInputConsumer consumer){return () -> consumer.ready()?Health.up().build():Health.down().build();}
+
+    static String forward(Core core, OutputPublisher bridge, byte[] payload, Map<String, ?> incoming) {
         if (payload.length > 1_048_576) throw new IllegalArgumentException("Payload exceeds 1 MiB");
         Map<String,Object> headers = new HashMap<>();
         incoming.forEach((key, value) -> {
-            if (!INTERNAL_HEADERS.contains(key.toLowerCase(Locale.ROOT)) &&
+            if (!key.toLowerCase(Locale.ROOT).startsWith("solace_") && !INTERNAL_HEADERS.contains(key.toLowerCase(Locale.ROOT)) &&
                 (value instanceof String || value instanceof Number || value instanceof Boolean || value instanceof byte[]))
                 headers.put(key, value);
         });
         // Preserve test/application correlation on broker ingress, but never accept routing controls.
-        headers.put("mi_correlation_id", incoming.getOrDefault("mi_correlation_id", null) instanceof String value ? value : UUID.randomUUID().toString());
+        Object correlation = incoming.entrySet().stream().filter(e -> e.getKey().equalsIgnoreCase("mi_correlation_id")).map(Map.Entry::getValue).filter(String.class::isInstance).findFirst().orElse(null);
+        headers.put("mi_correlation_id", correlation != null ? correlation : UUID.randomUUID().toString());
         final byte[] result;
         try { result = core.process(payload, headers); }
         catch (IllegalArgumentException rejected) { throw rejected; }
@@ -68,11 +78,8 @@ public class Application {
         return List.copyOf(topics);
     }
 
-    private static void publish(StreamBridge bridge, byte[] payload, Map<String,Object> headers, String topic) {
-        var message = MessageBuilder.withPayload(payload).copyHeaders(headers);
-        if (topic != null) message.setHeader("scst_targetDestination", topic);
-        if (!bridge.send("output-out-0", message.build()))
-            throw new IllegalStateException("Output publisher did not accept the message");
+    private static void publish(OutputPublisher bridge, byte[] payload, Map<String,Object> headers, String topic) {
+        bridge.publish(payload,headers,topic);
     }
 
     static void verifyStripe(byte[] payload, String signature, String secret, long now) {
@@ -110,10 +117,10 @@ public class Application {
     @RestController
     static class Ingress {
         private final Core core;
-        private final StreamBridge bridge;
+        private final OutputPublisher bridge;
         private final String webhookProvider;
         private final String stripeSecret;
-        Ingress(Core core, StreamBridge bridge, @Value("${mi.webhook-provider:none}") String webhookProvider,
+        Ingress(Core core, OutputPublisher bridge, @Value("${mi.webhook-provider:none}") String webhookProvider,
                 @Value("${mi.stripe-webhook-secret:}") String stripeSecret) {
             this.core = core; this.bridge = bridge; this.webhookProvider = webhookProvider; this.stripeSecret = stripeSecret;
         }

@@ -33,6 +33,9 @@ def spec():
         "name": "upper-case",
         "description": "Uppercase UTF-8 text",
         "core_java": CORE,
+        "core_go": json.loads(
+            (Path(__file__).parents[1] / "resources/samples/core-java/uppercase.json").read_text()
+        )["core_go"],
         "examples": [{"input": "hello", "output": "HELLO"}, {"input": "", "expected_error": True}],
     }
 
@@ -40,7 +43,10 @@ def spec():
 def generate_after_confirmation(provider, request):
     plan = {"services": [{"name": "Java message processor", "supported": True}], "sources": []}
     token = service_confirmation.seal(plan, request, "")
-    return advisor_service.AdvisorService(provider).respond(
+    class UnitPackagingValidator:
+        def submit(self, project, sources=None):
+            return {'status':'generated','project':project,'sources':sources or [],'content':'Unit packaging fixture; no runtime qualification claimed.'}
+    return advisor_service.AdvisorService(provider, validator=UnitPackagingValidator()).respond(
         [
             {"role": "user", "content": request},
             {"role": "assistant", "content": "Is this the right service?"},
@@ -335,7 +341,7 @@ def test_stripe_webhook_project_uses_signed_http_intake_and_topic_contracts():
         config = read("src/main/resources/application.yml")
         assert "definition: ''" in config and "autodetect: false" in config
         assert "          destination: ${SOLACE_INPUT_TOPIC:" not in config
-        assert "webhook-provider: stripe" in config
+        assert "webhook-provider: ${webhook.provider:stripe}" in config
         assert "STRIPE_WEBHOOK_SECRET=replace-me" in read(".env.example")
         smoke = read("src/test/java/com/solace/mi/BrokerRoundTripIT.java")
         assert "Stripe-Signature" in smoke and "unsigned.statusCode()" in smoke

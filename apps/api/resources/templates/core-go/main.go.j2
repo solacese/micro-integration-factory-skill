@@ -1,0 +1,51 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+)
+
+func main() {
+	configPath := flag.String("config", "config/mi-config.yaml", "shared configuration file")
+	health := flag.Bool("healthcheck", false, "check the running MI")
+	flag.Parse()
+	if *health {
+		client := &http.Client{Timeout: 2 * time.Second}
+		response, err := client.Get("http://localhost:8080/actuator/health")
+		if err != nil {
+			os.Exit(1)
+		}
+		defer response.Body.Close()
+		if response.StatusCode != 200 {
+			os.Exit(1)
+		}
+		return
+	}
+	config, err := loadConfig(*configPath)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+	broker := &brokerTransport{config: config}
+	go broker.run(ctx)
+	server := &http.Server{Addr: ":8080", Handler: broker.handler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 20 * time.Second, IdleTimeout: 60 * time.Second, MaxHeaderBytes: 16 << 10}
+	go func() {
+		<-ctx.Done()
+		shutdown, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdown)
+	}()
+	fmt.Println("MI listening on :8080")
+	if err = server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		fmt.Fprintln(os.Stderr, "HTTP server stopped")
+		os.Exit(1)
+	}
+}

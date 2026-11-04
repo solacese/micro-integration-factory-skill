@@ -1,0 +1,8 @@
+package com.solace.mi;
+
+import java.util.Map;
+
+/** Successful return means the broker acknowledged this persistent output. */
+public interface OutputPublisher {
+    void publish(byte[] payload, Map<String,Object> headers, String topic);
+}

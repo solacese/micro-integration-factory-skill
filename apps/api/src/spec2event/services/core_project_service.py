@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import io
 import json
@@ -12,6 +13,7 @@ from pathlib import Path
 
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
+from spec2event.services.dual_project_service import shared_configuration
 from spec2event.services.utils import safe_slug
 
 TEMPLATES = Path(__file__).resolve().parents[3] / "resources/templates/core-java"
@@ -25,6 +27,7 @@ DEPENDENCIES = {
 def create_core_project(
     spec: dict, sources: list[dict] | None = None, service_plan: list[dict] | None = None
 ) -> dict:
+    spec = copy.deepcopy(spec)
     if not (TEMPLATES / "pom.xml.j2").is_file():
         raise RuntimeError("The standard Java runtime templates are missing")
     name = safe_slug(str(spec.get("name", "my-mi")))[:64]
@@ -86,6 +89,7 @@ def create_core_project(
         "description": str(spec.get("description", "Custom micro integration"))[:500],
         "dependencies": [DEPENDENCIES[key] for key in dict.fromkeys(chosen)],
         "webhook": spec.get("webhook", "none"),
+        "required_env": spec.get("required_env", []),
     }
     if context["webhook"] not in {"none", "stripe"}:
         raise ValueError("webhook must be none or stripe")
@@ -115,6 +119,7 @@ def create_core_project(
     if missing := required - files.keys():
         raise RuntimeError("The standard runtime is incomplete: " + ", ".join(sorted(missing)))
     files["src/main/java/com/solace/mi/Core.java"] = core.rstrip() + "\n"
+    files["config/mi-config.yaml"] = shared_configuration(spec, name)
     files["src/test/resources/core-examples.json"] = json.dumps(examples, indent=2)
     for variable in spec.get("required_env", []):
         if not re.fullmatch(r"[A-Z][A-Z0-9_]{1,80}", variable):

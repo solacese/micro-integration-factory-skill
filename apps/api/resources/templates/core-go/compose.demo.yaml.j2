@@ -1,0 +1,26 @@
+services:
+  integration:
+    volumes: ["./config/mi-demo.yaml:/app/config/mi-config.yaml:ro"]
+    depends_on:
+      broker:
+        condition: service_healthy
+  broker:
+    image: ${SOLACE_BROKER_IMAGE:-solace/solace-pubsub-standard:latest}
+    shm_size: 1g
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    environment:
+      username_admin_globalaccesslevel: admin
+      username_admin_password: admin
+      system_scaling_maxconnectioncount: 100
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -u admin:admin http://localhost:8080/SEMP/v2/config/msgVpns/default >/dev/null"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 20s
+  smoke:
+    environment:
+      MI_TEST_CONFIG: config/mi-demo.yaml

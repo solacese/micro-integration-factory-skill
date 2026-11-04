@@ -1,0 +1,82 @@
+package com.solace.mi;
+
+import com.solacesystems.jcsmp.*;
+import org.springframework.core.env.Environment;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.nio.charset.StandardCharsets;
+
+/** Bounded native SMF workers; acknowledge only after outputs or retained error publication. */
+public final class SmfInputConsumer implements AutoCloseable {
+    private final SmfOutputPublisher publisher;
+    private final Core core;
+    private final JCSMPSession session;
+    private final com.solacesystems.jcsmp.Queue queue;
+    private final String errorTopic;
+    private final boolean enabled;
+    private final AtomicBoolean closed=new AtomicBoolean();
+    private final CopyOnWriteArrayList<FlowReceiver> flows=new CopyOnWriteArrayList<>();
+    private final ExecutorService workers=Executors.newFixedThreadPool(32);
+    public SmfInputConsumer(SmfOutputPublisher publisher,Core core,Environment environment) throws JCSMPException {
+        this.publisher=publisher;this.core=core;session=publisher.session();
+        enabled=!"stripe".equals(environment.getProperty("mi.webhook-provider","none"));
+        String name=environment.getProperty("messaging.subscription","{{ name }}");
+        queue=JCSMPFactory.onlyInstance().createQueue(name);
+        errorTopic=environment.getProperty("messaging.error-topic","mi/{{ name }}/error");
+        if (!enabled) return;
+        String input=environment.getProperty("messaging.input-topic",environment.getProperty("spring.cloud.stream.bindings.process-in-0.destination","mi/{{ name }}/in"));
+        provision(queue,input);
+        provision(JCSMPFactory.onlyInstance().createQueue(name+"-errors"),errorTopic);
+        for (int index=0;index<32;index++) {
+            FlowReceiver flow=createFlow();
+            workers.submit(() -> consume(flow));
+        }
+    }
+    private void provision(com.solacesystems.jcsmp.Queue endpoint,String topic) throws JCSMPException {
+        var properties=new EndpointProperties();
+        properties.setAccessType(EndpointProperties.ACCESSTYPE_NONEXCLUSIVE);
+        properties.setPermission(EndpointProperties.PERMISSION_MODIFY_TOPIC);
+        properties.setQuota(100);
+        session.provision(endpoint,properties,JCSMPSession.FLAG_IGNORE_ALREADY_EXISTS);
+        session.addSubscription(endpoint,JCSMPFactory.onlyInstance().createTopic(topic),JCSMPSession.WAIT_FOR_CONFIRM);
+    }
+    private FlowReceiver createFlow() throws JCSMPException {
+        var properties=new ConsumerFlowProperties();properties.setEndpoint(queue);
+        properties.setAckMode(JCSMPProperties.SUPPORTED_MESSAGE_ACK_CLIENT);
+        properties.setTransportWindowSize(8);
+        FlowReceiver flow=session.createFlow(null,properties);flow.start();flows.add(flow);return flow;
+    }
+    public boolean ready(){return !enabled || (!closed.get() && flows.size()==32 && publisher.ready());}
+    private void consume(FlowReceiver initial) {
+        FlowReceiver flow=initial;
+        while (!closed.get() && !Thread.currentThread().isInterrupted()) {
+            try {
+                if(flow==null) flow=createFlow();
+                var message=flow.receive(1000);
+                if(message==null) continue;
+                byte[] payload;
+                if(message instanceof TextMessage text) payload=text.getText().getBytes(StandardCharsets.UTF_8);
+                else if(message.hasAttachment()){var bytes=message.getAttachmentByteBuffer();payload=new byte[bytes.remaining()];bytes.get(payload);}
+                else payload=message.getBytes();
+                Map<String,Object> headers=new HashMap<>();
+                if(message.getProperties()!=null) for(String key:message.getProperties().keySet()) headers.put(key,message.getProperties().get(key));
+                boolean complete=false;
+                for(int attempt=0;attempt<3;attempt++) {
+                    try {Application.forward(core,publisher,payload,headers);complete=true;break;}
+                    catch(IllegalArgumentException invalid){break;}
+                    catch(IllegalStateException failed){Thread.sleep(200L*(attempt+1));}
+                }
+                if(!complete) {
+                    headers.remove("mi_output_topics");headers.remove("scst_targetDestination");
+                    headers.put("mi_error","processing_failed");publisher.publish(payload,headers,errorTopic);
+                }
+                message.ackMessage();
+            } catch(Exception error) {
+                if(flow!=null){flows.remove(flow);flow.close();flow=null;}
+                if(!closed.get()) try{Thread.sleep(1000);}catch(InterruptedException interrupted){Thread.currentThread().interrupt();}
+            }
+        }
+    }
+    @Override public void close(){closed.set(true);flows.forEach(FlowReceiver::close);flows.clear();workers.shutdownNow();try{workers.awaitTermination(10,TimeUnit.SECONDS);}catch(InterruptedException interrupted){Thread.currentThread().interrupt();}}
+}

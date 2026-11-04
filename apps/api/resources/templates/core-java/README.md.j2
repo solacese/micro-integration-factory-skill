@@ -2,7 +2,7 @@
 
 {{ description }}
 
-The business logic is in **src/main/java/com/solace/mi/Core.java**. Application.java is the standard transport. The project uses the Solace MDK 4.3.11 dependency platform with Spring Cloud Stream and Java 17; it does not load the stock connector workflow engine.
+The business logic is in **src/main/java/com/solace/mi/Core.java**. Application.java is the standard transport, with one bounded native JCSMP output producer that waits for persistent broker acknowledgements. The project uses the Solace MDK 4.3.11 dependency platform with Spring Boot and Java 17; it does not load the stock connector workflow engine.
 
 ## Start a local demo
 
@@ -28,7 +28,7 @@ To receive events from your Stripe test account, [install and authenticate the S
 stripe listen --events payment_intent.succeeded,payment_intent.payment_failed --forward-to http://localhost:18080/ingest
 ```
 
-Copy the `whsec_...` signing secret printed by that command into **STRIPE_WEBHOOK_SECRET in .env**. Keep `stripe listen` running. In another terminal, apply the secret and trigger an event:
+Copy the `whsec_...` signing secret printed by that command into **webhook.signing-secret in config/mi-config.yaml**. Keep `stripe listen` running. In another terminal, apply the secret and trigger an event:
 
 ```bash
 ./scripts/install.sh --demo
@@ -44,9 +44,9 @@ Core.java sets `mi_output_topics` to the concrete topic list. The returned bytes
 
 ## Connect an existing broker
 
-Run `./scripts/install.sh` once to create `.env`. Set the SMF endpoint, VPN, credentials, and topics there, then run it again. Input clients need permission to create/bind the durable queue and its error queue. Use a TLS endpoint and trusted certificates for remote services. Keep input and output topics separate. Run `./scripts/smoke.sh` to verify the configured broker.
+Complete **config/mi-config.yaml** (or copy the shared grey YAML download there), then run `./scripts/install.sh`. Set broker.smf-url, VPN, username, password and messaging topics. The identical YAML is accepted by the Go alternative; AMQP uses broker.amqp-url. `.env` is created automatically for optional Compose settings such as MI_HTTP_PORT. Input clients need permission to create/bind the durable queue and its error queue. Use a TLS endpoint and trusted certificates for remote services. Keep input and output topics separate. Run `./scripts/smoke.sh` to verify the configured broker.
 
-{% if webhook == 'stripe' %}Messages arrive through signed HTTP POST /ingest; broker input is disabled.{% else %}Messages arrive through the input topic or HTTP POST /ingest.{% endif %} Core.java receives raw bytes plus a mutable map of message properties and returns output bytes; IllegalArgumentException rejects input. Set `headers.put("mi_output_topics", List.of("topic/one", "topic/two"))` to fan out to up to sixteen concrete topics. The default output binding is used when no route list is set. An HTTP 202 means the binder accepted publication, so use the smoke test to verify delivery. This v1 does not establish exactly-once delivery or a production throughput limit.
+{% if webhook == 'stripe' %}Messages arrive through signed HTTP POST /ingest; broker input is disabled.{% else %}Messages arrive through the input topic or HTTP POST /ingest.{% endif %} Core.java receives raw bytes plus a mutable map of message properties and returns output bytes; IllegalArgumentException rejects input. Set `headers.put("mi_output_topics", List.of("topic/one", "topic/two"))` to fan out to up to sixteen concrete topics. The default output binding is used when no route list is set. An HTTP 202 means the native SMF publisher received broker acknowledgements for all output sends. The smoke test verifies the downstream bytes and routes. This v1 does not establish exactly-once delivery or a production throughput limit.
 
 ## Change the core
 
@@ -56,4 +56,4 @@ Run `./scripts/install.sh` once to create `.env`. Set the SMF endpoint, VPN, cre
 ./scripts/smoke.sh --demo
 ```
 
-Verification uses the supplied contract examples. Compilation, contract tests, and broker tests have separate results: generation.json starts with all three as not_run until you run them. Assumptions and fetched source URLs are recorded there. No credentials are included in the download.
+Website downloads unlock only after both generated runtimes build, pass their contract tests, and pass the isolated 1,000 messages/s qualification. See validation.json and benchmark.csv for the measured workload, latency and environment. CLI packaging without --validate starts with verification states not_run. Changing Core.java or configuration invalidates the earlier measurements; rerun verification and qualification. The benchmark uses synthetic fixtures and an isolated broker; it does not establish live vendor throughput or maximum capacity. Assumptions and fetched source URLs are recorded there. No credentials are included in the download.

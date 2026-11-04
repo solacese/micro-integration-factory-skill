@@ -1,0 +1,12 @@
+FROM golang:1.27.3-alpine AS build
+WORKDIR /workspace
+ENV CGO_ENABLED=0
+COPY . .
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build go mod tidy && go test ./... && go build -trimpath -ldflags="-s -w" -o /mi .
+FROM scratch
+COPY --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --from=build /mi /mi
+USER 65532:65532
+EXPOSE 8080
+ENV GOMEMLIMIT=96MiB
+ENTRYPOINT ["/mi", "-config", "/app/config/mi-config.yaml"]

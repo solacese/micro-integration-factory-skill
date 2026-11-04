@@ -1,0 +1,31 @@
+services:
+  integration:
+    build: .
+    user: "${MI_RUN_UID:-65532}:${MI_RUN_GID:-65532}"
+    ports: ["127.0.0.1:${MI_HTTP_PORT:-18080}:8080"]
+    volumes: ["./config/mi-config.yaml:/app/config/mi-config.yaml:ro"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: {{ '256m' if transport == 'smf' else '128m' }}
+    healthcheck:
+      test: ["CMD", "/mi", "-healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+  smoke:
+    profiles: [tools]
+    image: golang:1.27.3-{{ 'bookworm' if transport == 'smf' else 'alpine' }}
+    user: "${MI_TEST_UID:-1000}:${MI_TEST_GID:-1000}"
+    working_dir: /workspace
+    volumes: [".:/workspace"]
+    extra_hosts: ["host.docker.internal:host-gateway"]
+    environment:
+      GOPATH: /tmp/go
+      GOCACHE: /tmp/go-build
+      MI_SMOKE: "1"
+      MI_SMOKE_HTTP: http://integration:8080/ingest
+    command: ["go", "test", "-mod=mod", "-v", "./..."]

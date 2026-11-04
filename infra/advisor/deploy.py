@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import time
 import zipfile
+import sys
 from pathlib import Path
 from secrets import token_urlsafe
 
@@ -47,6 +48,31 @@ def deploy(env_file: Path, region: str):
     ):
         raise ValueError("An existing OpenAI-compatible deployment ID is required")
     session = boto3.Session(region_name=region)
+    try:
+        session.client("sts").get_caller_identity()
+    except Exception as error:
+        from botocore.exceptions import TokenRetrievalError
+
+        if not isinstance(error, TokenRetrievalError):
+            raise
+        # Newer CLI may have refreshed SSO credentials the bundled SDK cannot refresh.
+        # Keep them in process memory; never write or print credential values.
+        temporary = json.loads(
+            subprocess.check_output(
+                ["aws", "configure", "export-credentials", "--format", "process"],
+                text=True,
+            )
+        )
+        session = boto3.Session(
+            region_name=region,
+            aws_access_key_id=temporary["AccessKeyId"],
+            aws_secret_access_key=temporary["SecretAccessKey"],
+            aws_session_token=temporary["SessionToken"],
+        )
+    sys.path.insert(0, str(ROOT))
+    from infra.validation.deploy_worker import provision
+
+    validation_environment, validation_policy = provision(session)
     account = session.client("sts").get_caller_identity()["Account"]
     build = ROOT / ".runtime/advisor-package"
     if build.exists():
@@ -73,6 +99,7 @@ def deploy(env_file: Path, region: str):
     for relative in [
         "apps/api/src/spec2event",
         "apps/api/resources/templates/core-java",
+        "apps/api/resources/templates/core-go",
         "infra/advisor",
     ]:
         shutil.copytree(
@@ -155,6 +182,7 @@ def deploy(env_file: Path, region: str):
             },
         ],
     }
+    policy["Statement"].extend(validation_policy)
     iam.put_role_policy(
         RoleName=NAME, PolicyName=NAME, PolicyDocument=json.dumps(policy)
     )
@@ -173,6 +201,7 @@ def deploy(env_file: Path, region: str):
             ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
         ).strip(),
     }
+    environment.update(validation_environment)
     # Shared across Lambda instances and retained on redeploys. Never sent to the browser.
     existing_config = None
     try:

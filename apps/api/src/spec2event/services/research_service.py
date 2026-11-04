@@ -16,6 +16,14 @@ import httpx
 
 CATALOG = [
     (
+        "Go AMQP 1.0 messaging client",
+        "https://raw.githubusercontent.com/Azure/go-amqp/main/README.md",
+    ),
+    (
+        "Go YAML shared configuration parser",
+        "https://raw.githubusercontent.com/yaml/go-yaml/main/README.md",
+    ),
+    (
         "Solace micro integrations overview",
         "https://docs.solace.com/Micro-Integrations/Micro-Integrations.htm",
     ),
@@ -92,6 +100,8 @@ HOSTS = {
     "repo.maven.apache.org",
     "developer.salesforce.com",
     "docs.oracle.com",
+    "go.dev",
+    "pkg.go.dev",
 }
 GITHUB_ORGS = {
     "SolaceProducts",
@@ -105,6 +115,11 @@ GITHUB_ORGS = {
     "protocolbuffers",
     "forcedotcom",
     "salesforce",
+    "Azure",
+    "yaml",
+    "golang",
+    "santhosh-tekuri",
+    "linkedin",
 }
 MAX_BYTES = 600_000
 _cache: dict[str, tuple[float, dict]] = {}

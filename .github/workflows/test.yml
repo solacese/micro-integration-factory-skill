@@ -85,3 +85,16 @@ jobs:
         env:
           MI_FACTORY_SPEC: ${{ github.workspace }}/apps/api/resources/samples/core-java/stripe-webhook.json
         run: ./scripts/smoke-v1.sh
+
+      - name: Verify a fresh pure-Go AMQP installation
+        run: ./scripts/smoke-go-v1.sh
+
+      - name: Verify a fresh native Go SMF installation
+        env:
+          MI_FACTORY_GO_TRANSPORT: smf
+        run: ./scripts/smoke-go-v1.sh
+
+      - name: Verify Go signed Stripe intake and all output routes
+        env:
+          MI_FACTORY_SPEC: ${{ github.workspace }}/apps/api/resources/samples/core-java/stripe-webhook.json
+        run: ./scripts/smoke-go-v1.sh

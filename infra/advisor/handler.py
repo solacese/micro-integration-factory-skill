@@ -25,7 +25,7 @@ def _response(code, data):
     }
 
 
-def _quota(event):
+def _quota(event, polling=False):
     """Atomic daily global budget plus per-IP minute budget; no raw IP retention."""
     table_name = os.getenv("QUOTA_TABLE")
     if not table_name:
@@ -40,6 +40,10 @@ def _quota(event):
         (f"day:{now // 86400}", int(os.getenv("DAILY_BUILD_LIMIT", "200"))),
         (f"minute:{now // 60}:" + hashlib.sha256(ip.encode()).hexdigest()[:24], 6),
     ]
+    if polling:
+        buckets = [
+            (f"poll:{now // 60}:" + hashlib.sha256(ip.encode()).hexdigest()[:24], 30)
+        ]
     for key, limit in buckets:
         try:
             table.update_item(
@@ -75,7 +79,7 @@ def lambda_handler(event, context):
                 "revision": os.getenv("FACTORY_REVISION", "development"),
             },
         )
-    if path != "/chat" or method != "POST":
+    if path not in {"/chat", "/validation/status"} or method != "POST":
         return _response(404, {"error": "Not found"})
     try:
         body = event.get("body") or ""
@@ -83,16 +87,24 @@ def lambda_handler(event, context):
             import base64
 
             body = base64.b64decode(body, validate=True).decode()
-        if len(body.encode()) > 100_000:
+        if len(body.encode()) > 200_000:
             return _response(413, {"error": "Request too large"})
         request = json.loads(body)
         if not isinstance(request, dict):
             raise ValueError("Send a JSON object")
-        _quota(event)
+        _quota(event, polling=path == "/validation/status")
+        if path == "/validation/status":
+            return _response(
+                200,
+                advisor.validator.status(
+                    request.get("jobId"), request.get("validationToken")
+                ),
+            )
         result = advisor.respond(
             request.get("messages"),
             request.get("coreJava", ""),
             request.get("confirmationToken", ""),
+            request.get("coreGo", ""),
         )
         return _response(200, result)
     except (ValueError, TypeError) as error:

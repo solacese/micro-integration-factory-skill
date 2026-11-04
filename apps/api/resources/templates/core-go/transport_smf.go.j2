@@ -1,0 +1,176 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"solace.dev/go/messaging"
+	"solace.dev/go/messaging/pkg/solace"
+	sdkconfig "solace.dev/go/messaging/pkg/solace/config"
+	"solace.dev/go/messaging/pkg/solace/message"
+	"solace.dev/go/messaging/pkg/solace/resource"
+	"strings"
+	"sync"
+	"time"
+)
+
+type smfPublisher struct {
+	service solace.MessagingService
+	sender  solace.PersistentMessagePublisher
+}
+
+func (p *smfPublisher) publish(ctx context.Context, payload []byte, headers map[string]any, topics []string) error {
+	properties := sdkconfig.MessagePropertyMap{}
+	for key, value := range headers {
+		properties[sdkconfig.MessageProperty(key)] = value
+	}
+	outbound, err := p.service.MessageBuilder().BuildWithByteArrayPayload(payload, properties)
+	if err != nil {
+		return ErrUnavailable
+	}
+	defer outbound.Dispose()
+	for _, topic := range topics {
+		timeout := 10 * time.Second
+		if deadline, ok := ctx.Deadline(); ok {
+			timeout = time.Until(deadline)
+		}
+		if timeout <= 0 {
+			return ErrUnavailable
+		}
+		if err = p.sender.PublishAwaitAcknowledgement(outbound, resource.TopicOf(topic), timeout, nil); err != nil {
+			return ErrUnavailable
+		}
+	}
+	return nil
+}
+func (b *brokerTransport) connected(ctx context.Context) error {
+	properties := sdkconfig.ServicePropertyMap{sdkconfig.TransportLayerPropertyHost: b.config.Broker.SMFURL, sdkconfig.ServicePropertyVPNName: b.config.Broker.VPN}
+	if strings.HasPrefix(b.config.Broker.SMFURL, "tcps:") {
+		properties[sdkconfig.TransportLayerSecurityPropertyTrustStorePath] = "/etc/ssl/certs"
+	}
+	service, err := messaging.NewMessagingServiceBuilder().FromConfigurationProvider(properties).WithAuthenticationStrategy(sdkconfig.BasicUserNamePasswordAuthentication(b.config.Broker.Username, b.config.Broker.Password)).WithConnectionRetryStrategy(sdkconfig.RetryStrategyNeverRetry()).WithReconnectionRetryStrategy(sdkconfig.RetryStrategyNeverRetry()).Build()
+	if err != nil {
+		return err
+	}
+	if err = service.Connect(); err != nil {
+		return err
+	}
+	defer service.Disconnect()
+	down := make(chan struct{})
+	var once sync.Once
+	service.AddServiceInterruptionListener(func(solace.ServiceEvent) { once.Do(func() { close(down) }) })
+	sender, err := service.CreatePersistentMessagePublisherBuilder().OnBackPressureWait(1024).Build()
+	if err != nil {
+		return err
+	}
+	if err = sender.Start(); err != nil {
+		return err
+	}
+	defer sender.Terminate(5 * time.Second)
+	var receiver solace.PersistentMessageReceiver
+	if b.config.Webhook.Provider != "stripe" {
+		errorReceiver, err := service.CreatePersistentMessageReceiverBuilder().WithMissingResourcesCreationStrategy(sdkconfig.PersistentReceiverCreateOnStartMissingResources).WithSubscriptions(resource.TopicSubscriptionOf(b.config.Messaging.ErrorTopic)).Build(resource.QueueDurableExclusive(b.config.Messaging.Subscription + "-errors"))
+		if err != nil {
+			return err
+		}
+		if err = errorReceiver.Start(); err != nil {
+			return err
+		}
+		_ = errorReceiver.Terminate(0)
+		receiver, err = service.CreatePersistentMessageReceiverBuilder().WithMissingResourcesCreationStrategy(sdkconfig.PersistentReceiverCreateOnStartMissingResources).WithMessageClientAcknowledgement().WithRequiredMessageOutcomeSupport(sdkconfig.PersistentReceiverFailedOutcome).WithSubscriptions(resource.TopicSubscriptionOf(b.config.Messaging.InputTopic)).Build(resource.QueueDurableExclusive(b.config.Messaging.Subscription))
+		if err != nil {
+			return err
+		}
+		if err = receiver.Start(); err != nil {
+			return err
+		}
+		defer receiver.Terminate(5 * time.Second)
+	}
+	b.mu.Lock()
+	b.publisher = &smfPublisher{service: service, sender: sender}
+	b.ready = true
+	b.mu.Unlock()
+	if receiver == nil {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-down:
+			return ErrUnavailable
+		}
+	}
+	jobs := make(chan message.InboundMessage, 32)
+	var workers sync.WaitGroup
+	for i := 0; i < 32; i++ {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			for inbound := range jobs {
+				b.consumeSMF(ctx, receiver, inbound)
+			}
+		}()
+	}
+	defer workers.Wait()
+	defer close(jobs)
+	for {
+		inbound, err := receiver.ReceiveMessage(time.Second)
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-down:
+				return ErrUnavailable
+			default:
+			}
+			var timeout *solace.TimeoutError
+			if errors.As(err, &timeout) {
+				continue
+			}
+			return err
+		}
+		select {
+		case jobs <- inbound:
+		case <-ctx.Done():
+			inbound.Dispose()
+			return ctx.Err()
+		}
+	}
+}
+func (b *brokerTransport) consumeSMF(ctx context.Context, receiver solace.PersistentMessageReceiver, inbound message.InboundMessage) {
+	defer inbound.Dispose()
+	payload, ok := inbound.GetPayloadAsBytes()
+	if !ok {
+		if text, found := inbound.GetPayloadAsString(); found {
+			payload = []byte(text)
+		}
+	}
+	headers := make(map[string]any)
+	for key, value := range inbound.GetProperties() {
+		headers[key] = value
+	}
+	var err error
+	for attempt := 0; attempt < 3; attempt++ {
+		processing, cancel := context.WithTimeout(ctx, 15*time.Second)
+		_, err = b.process(processing, payload, headers)
+		cancel()
+		if err == nil {
+			_ = receiver.Ack(inbound)
+			return
+		}
+		if errors.Is(err, ErrInvalidInput) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Duration(attempt+1) * 200 * time.Millisecond):
+		}
+	}
+	headers = safeHeaders(headers)
+	headers["mi_error"] = "processing_failed"
+	failure, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if b.publish(failure, payload, headers, []string{b.config.Messaging.ErrorTopic}) == nil {
+		_ = receiver.Ack(inbound)
+	} else {
+		_ = receiver.Settle(inbound, sdkconfig.PersistentReceiverFailedOutcome)
+	}
+}

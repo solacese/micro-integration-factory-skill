@@ -78,7 +78,7 @@ class SapAiCoreProvider:
             "model": model,
             "instructions": "\n".join(instructions),
             "input": inputs,
-            "max_output_tokens": 12000,
+            "max_output_tokens": 16000,
             "reasoning": {"effort": "medium"},
             "tools": [{"type": "function", **tool["function"]} for tool in tools],
         }

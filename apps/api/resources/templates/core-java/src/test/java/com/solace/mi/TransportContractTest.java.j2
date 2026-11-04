@@ -5,8 +5,6 @@ import java.nio.charset.StandardCharsets;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Test;
-import org.springframework.cloud.stream.function.StreamBridge;
-import org.springframework.messaging.Message;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -45,26 +43,36 @@ class TransportContractTest {
 
     @Test void coreRoutesArePublishedAndIncomingRoutesCannotOverrideThem() throws Exception {
         var core=mock(Core.class);
-        var bridge=mock(StreamBridge.class);
+        var bridge=mock(OutputPublisher.class);
         when(core.process(any(),anyMap())).thenAnswer(invocation -> {
             Map<String,Object> headers=invocation.getArgument(1);
             assertFalse(headers.containsKey("mi_output_topics"));
             assertFalse(headers.containsKey("scst_targetDestination"));
+            assertFalse(headers.containsKey("deliveryAttempt"));
+            assertFalse(headers.containsKey("solace_timeToLive"));
+            assertFalse(headers.containsKey("Authorization"));
             headers.put("mi_output_topics",List.of("stripe/events","stripe/customers/cus_1"));
             return PAYLOAD;
         });
-        when(bridge.send(eq("output-out-0"),any())).thenReturn(true);
-        Application.forward(core,bridge,PAYLOAD,Map.of("mi_output_topics","attacker/topic","scst_targetDestination","attacker/topic"));
-        var captor=org.mockito.ArgumentCaptor.forClass(Message.class);
-        verify(bridge,times(2)).send(eq("output-out-0"),captor.capture());
-        assertEquals(List.of("stripe/events","stripe/customers/cus_1"),captor.getAllValues().stream().map(m -> m.getHeaders().get("scst_targetDestination")).toList());
-        when(bridge.send(eq("output-out-0"),any())).thenReturn(false);
+        Application.forward(core,bridge,PAYLOAD,Map.of("mi_output_topics","attacker/topic","scst_targetDestination","attacker/topic","deliveryAttempt",new java.util.concurrent.atomic.AtomicInteger(1),"solace_timeToLive",0L,"Authorization","private-test-value"));
+        var captor=org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(bridge,times(2)).publish(eq(PAYLOAD),anyMap(),captor.capture());
+        assertEquals(List.of("stripe/events","stripe/customers/cus_1"),captor.getAllValues());
+        doThrow(new IllegalStateException("Broker rejected output")).when(bridge).publish(any(),anyMap(),any());
         assertThrows(IllegalStateException.class,()->Application.forward(core,bridge,PAYLOAD,Map.of()));
+    }
+
+    @Test void correlationHeaderIsCaseInsensitiveOnHttpIngress() throws Exception {
+        var core=mock(Core.class);var bridge=mock(OutputPublisher.class);
+        when(core.process(any(),anyMap())).thenReturn(PAYLOAD);
+        assertEquals("trace-123",Application.forward(core,bridge,PAYLOAD,Map.of("Mi_correlation_id","trace-123")));
+        var captor=org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(bridge).publish(eq(PAYLOAD),argThat(h -> "trace-123".equals(h.get("mi_correlation_id"))),isNull());
     }
 
     @Test void invalidSignatureNeverInvokesCoreOrPublisher() throws Exception {
         var core=mock(Core.class);
-        var bridge=mock(StreamBridge.class);
+        var bridge=mock(OutputPublisher.class);
         var ingress=new Application.Ingress(core,bridge,"stripe",SECRET);
         assertThrows(IllegalArgumentException.class,()->ingress.ingest(PAYLOAD,Map.of()));
         verifyNoInteractions(core,bridge);

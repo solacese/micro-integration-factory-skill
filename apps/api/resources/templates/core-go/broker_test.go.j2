@@ -1,0 +1,126 @@
+package main
+
+import (
+	"bytes"
+	"context"
+	"encoding/base64"
+	"fmt"
+	"github.com/Azure/go-amqp"
+	"io"
+	"net/http"
+	"os"
+	"strconv"
+	"testing"
+	"time"
+)
+
+func fmtTimestamp(value int64) string { return strconv.FormatInt(value, 10) }
+func TestBrokerRoundTrip(t *testing.T) {
+	if os.Getenv("MI_SMOKE") == "" {
+		t.Skip("set MI_SMOKE=1 with a running integration and broker")
+	}
+	path := os.Getenv("MI_TEST_CONFIG")
+	if path == "" {
+		path = "config/mi-config.yaml"
+	}
+	config, err := loadConfig(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var example contractExample
+	for _, candidate := range examples(t) {
+		if candidate.Output != nil {
+			example = candidate
+			break
+		}
+	}
+	topics := example.Topics
+	if len(topics) == 0 {
+		topics = []string{config.Messaging.OutputTopic}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 40*time.Second)
+	defer cancel()
+	conn, err := amqp.Dial(ctx, config.Broker.AMQPURL, &amqp.ConnOptions{SASLType: amqp.SASLTypePlain(config.Broker.Username, config.Broker.Password)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	session, err := conn.NewSession(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	receivers := make([]*amqp.Receiver, 0, len(topics))
+	for _, topic := range topics {
+		receiver, err := session.NewReceiver(ctx, "topic://"+topic, &amqp.ReceiverOptions{Credit: 8})
+		if err != nil {
+			t.Fatal(err)
+		}
+		receivers = append(receivers, receiver)
+	}
+	payload, err := base64.StdEncoding.DecodeString(example.Input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	trace := correlationID()
+	if config.Webhook.Provider == "stripe" {
+		endpoint := os.Getenv("MI_SMOKE_HTTP")
+		if endpoint == "" {
+			endpoint = "http://localhost:18080/ingest"
+		}
+		client := &http.Client{Timeout: 15 * time.Second}
+		response, err := client.Post(endpoint, "application/json", bytes.NewReader(payload))
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = response.Body.Close()
+		if response.StatusCode != 422 {
+			t.Fatalf("unsigned webhook returned %d", response.StatusCode)
+		}
+		request, _ := http.NewRequestWithContext(ctx, "POST", endpoint, bytes.NewReader(payload))
+		request.Header.Set("Content-Type", "application/json")
+		request.Header.Set("Stripe-Signature", signatureFor(payload, time.Now().Unix(), config.Webhook.SigningSecret))
+		request.Header.Set("mi_correlation_id", trace)
+		response, err = client.Do(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		body, _ := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		if response.StatusCode != 202 {
+			t.Fatalf("signed webhook returned %d: %s", response.StatusCode, body)
+		}
+	} else {
+		sender, err := session.NewSender(ctx, "topic://"+config.Messaging.InputTopic, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		message := amqp.NewMessage(payload)
+		message.Header = &amqp.MessageHeader{Durable: true}
+		message.ApplicationProperties = example.Headers
+		if message.ApplicationProperties == nil {
+			message.ApplicationProperties = map[string]any{}
+		}
+		message.ApplicationProperties["mi_correlation_id"] = trace
+		if err = sender.Send(ctx, message, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	expected, _ := base64.StdEncoding.DecodeString(*example.Output)
+	for index, receiver := range receivers {
+		for {
+			message, err := receiver.Receive(ctx, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = receiver.AcceptMessage(ctx, message)
+			if message.ApplicationProperties["mi_correlation_id"] != trace {
+				continue
+			}
+			if !bytes.Equal(expected, message.GetData()) {
+				t.Fatalf("payload differs on %s", topics[index])
+			}
+			fmt.Println("Verified output topic:", topics[index])
+			break
+		}
+	}
+}

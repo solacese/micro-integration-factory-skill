@@ -1,0 +1,136 @@
+package main
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"strings"
+	"sync"
+	"time"
+)
+
+var ErrInvalidInput = errors.New("invalid input")
+var ErrUnavailable = errors.New("publisher unavailable")
+
+type messagePublisher interface {
+	publish(context.Context, []byte, map[string]any, []string) error
+}
+type brokerTransport struct {
+	mu        sync.RWMutex
+	publisher messagePublisher
+	ready     bool
+	config    Config
+}
+
+func (b *brokerTransport) isReady() bool { b.mu.RLock(); defer b.mu.RUnlock(); return b.ready }
+func (b *brokerTransport) publish(ctx context.Context, payload []byte, headers map[string]any, topics []string) error {
+	for _, topic := range topics {
+		if !validTopic(topic) {
+			return ErrInvalidInput
+		}
+	}
+	b.mu.RLock()
+	publisher := b.publisher
+	b.mu.RUnlock()
+	if publisher == nil {
+		return ErrUnavailable
+	}
+	return publisher.publish(ctx, payload, headers, topics)
+}
+func outputTopics(headers map[string]any, fallback string) ([]string, error) {
+	value, present := headers["mi_output_topics"]
+	delete(headers, "mi_output_topics")
+	delete(headers, "scst_targetDestination")
+	if !present {
+		return []string{fallback}, nil
+	}
+	var topics []string
+	switch v := value.(type) {
+	case []string:
+		topics = v
+	case []any:
+		for _, item := range v {
+			s, ok := item.(string)
+			if !ok {
+				return nil, ErrInvalidInput
+			}
+			topics = append(topics, s)
+		}
+	default:
+		return nil, ErrInvalidInput
+	}
+	if len(topics) == 0 || len(topics) > 16 {
+		return nil, ErrInvalidInput
+	}
+	unique := make([]string, 0, len(topics))
+	seen := make(map[string]bool, len(topics))
+	for _, topic := range topics {
+		if !validTopic(topic) {
+			return nil, ErrInvalidInput
+		}
+		if !seen[topic] {
+			unique = append(unique, topic)
+			seen[topic] = true
+		}
+	}
+	return unique, nil
+}
+func safeHeaders(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in)+2)
+	for key, value := range in {
+		switch strings.ToLower(key) {
+		case "mi_output_topics", "scst_targetdestination", "stripe-signature", "id", "timestamp", "authorization", "proxy-authorization", "cookie", "set-cookie", "x-api-key":
+			continue
+		}
+		switch value.(type) {
+		case string, bool, int, int32, int64, uint32, uint64, float32, float64, []byte:
+			out[key] = value
+		}
+	}
+	return out
+}
+func (b *brokerTransport) process(ctx context.Context, payload []byte, in map[string]any) (string, error) {
+	if len(payload) > 1<<20 {
+		return "", ErrInvalidInput
+	}
+	headers := safeHeaders(in)
+	if _, ok := headers["mi_correlation_id"].(string); !ok {
+		headers["mi_correlation_id"] = correlationID()
+	}
+	result, err := Process(payload, headers)
+	if err != nil {
+		return "", err
+	}
+	if result == nil {
+		return "", errors.New("core returned no result")
+	}
+	topics, err := outputTopics(headers, b.config.Messaging.OutputTopic)
+	if err != nil {
+		return "", err
+	}
+	if err = b.publish(ctx, result, headers, topics); err != nil {
+		return "", err
+	}
+	return fmt.Sprint(headers["mi_correlation_id"]), nil
+}
+func (b *brokerTransport) run(ctx context.Context) {
+	delay := time.Second
+	for ctx.Err() == nil {
+		if err := b.connected(ctx); err != nil && ctx.Err() == nil {
+			log.Printf("broker_connection_unavailable: %T", err) // No credentials, payloads, or raw error bodies.
+		}
+		b.mu.Lock()
+		b.publisher = nil
+		b.ready = false
+		b.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(delay):
+		}
+		if delay < 15*time.Second {
+			delay *= 2
+		}
+	}
+}

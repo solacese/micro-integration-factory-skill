@@ -11,5 +11,6 @@
       "input": "",
       "expected_error": true
     }
-  ]
+  ],
+  "core_go": "package main\nimport(\"fmt\";\"strings\";\"unicode/utf8\")\nfunc Process(payload []byte,headers map[string]any)([]byte,error){\n if !utf8.Valid(payload)||strings.TrimSpace(string(payload))==\"\"{return nil,fmt.Errorf(\"%w: empty or invalid UTF-8\",ErrInvalidInput)}\n return []byte(strings.ToUpper(string(payload))),nil\n}\n"
 }

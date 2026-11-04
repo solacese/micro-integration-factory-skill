@@ -1,0 +1,70 @@
+package com.solace.mi;
+
+import com.solacesystems.jcsmp.*;
+import org.springframework.core.env.Environment;
+import java.util.Map;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+
+/** One reusable native producer; bounded in-flight sends and explicit broker acknowledgements. */
+public final class SmfOutputPublisher implements OutputPublisher, AutoCloseable {
+    private final JCSMPSession session;
+    private final XMLMessageProducer producer;
+    private final String defaultTopic;
+    private final Semaphore slots = new Semaphore(256);
+    private final ConcurrentMap<CompletableFuture<Void>,Boolean> pending = new ConcurrentHashMap<>();
+    private final AtomicBoolean connected = new AtomicBoolean();
+
+    public SmfOutputPublisher(Environment environment) throws JCSMPException {
+        defaultTopic = environment.getProperty("spring.cloud.stream.bindings.output-out-0.destination");
+        var properties = new JCSMPProperties();
+        properties.setProperty(JCSMPProperties.PUB_ACK_WINDOW_SIZE,16);
+        properties.setProperty(JCSMPProperties.ACK_EVENT_MODE,JCSMPProperties.SUPPORTED_ACK_EVENT_MODE_PER_MSG);
+        properties.setProperty(JCSMPProperties.HOST,environment.getProperty("solace.java.host"));
+        properties.setProperty(JCSMPProperties.VPN_NAME,environment.getProperty("solace.java.msgVpn"));
+        properties.setProperty(JCSMPProperties.USERNAME,environment.getProperty("solace.java.clientUsername"));
+        properties.setProperty(JCSMPProperties.PASSWORD,environment.getProperty("solace.java.clientPassword"));
+        session = JCSMPFactory.onlyInstance().createSession(properties,null,event -> {
+            if (event.getEvent()==SessionEvent.RECONNECTED) connected.set(true);
+            else if (event.getEvent()==SessionEvent.DOWN_ERROR || event.getEvent()==SessionEvent.RECONNECTING) { connected.set(false);failPending(); }
+        });
+        session.connect();
+        producer = session.getMessageProducer(new JCSMPStreamingPublishCorrelatingEventHandler() {
+            public void responseReceivedEx(Object key) {
+                if (key instanceof CompletableFuture<?> future) future.complete(null);
+            }
+            public void handleErrorEx(Object key,JCSMPException error,long timestamp) {
+                if (key instanceof CompletableFuture<?> future) future.completeExceptionally(new IllegalStateException("Broker rejected output"));
+            }
+        });
+        connected.set(true);
+    }
+    JCSMPSession session(){return session;}
+    public boolean ready() { return connected.get() && !session.isClosed(); }
+    private void failPending() { pending.keySet().forEach(f -> f.completeExceptionally(new IllegalStateException("Publisher unavailable"))); }
+    @Override public void publish(byte[] payload, Map<String,Object> headers,String topic) {
+        boolean acquired=false;
+        var acknowledged=new CompletableFuture<Void>();
+        try {
+            if (!ready() || !(acquired=slots.tryAcquire(2,TimeUnit.SECONDS))) throw new IllegalStateException("Publisher unavailable");
+            var message=JCSMPFactory.onlyInstance().createMessage(BytesMessage.class);
+            message.setData(payload);
+            message.setDeliveryMode(DeliveryMode.PERSISTENT);
+            var properties=JCSMPFactory.onlyInstance().createMap();
+            for (var entry:headers.entrySet()) properties.putObject(entry.getKey(),entry.getValue());
+            message.setProperties(properties);
+            message.setCorrelationKey(acknowledged);
+            pending.put(acknowledged,Boolean.TRUE);
+            producer.send(message,JCSMPFactory.onlyInstance().createTopic(topic==null?defaultTopic:topic));
+            acknowledged.get(10,TimeUnit.SECONDS);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();throw new IllegalStateException("Publication interrupted");
+        } catch (Exception error) {
+            throw new IllegalStateException("Output publication was not acknowledged ("+error.getClass().getSimpleName()+")");
+        } finally {
+            pending.remove(acknowledged);
+            if (acquired) slots.release();
+        }
+    }
+    @Override public void close() { connected.set(false);failPending();producer.close();session.closeSession(); }
+}

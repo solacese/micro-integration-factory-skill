@@ -1,0 +1,128 @@
+package main
+
+import (
+	"bytes"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"os"
+	"reflect"
+	"testing"
+	"time"
+)
+
+type contractExample struct {
+	Input         string         `json:"input_base64"`
+	Output        *string        `json:"output_base64"`
+	ExpectedError bool           `json:"expected_error"`
+	Headers       map[string]any `json:"headers"`
+	Topics        []string       `json:"output_topics"`
+}
+
+func examples(t testing.TB) []contractExample {
+	t.Helper()
+	data, err := os.ReadFile("core-examples.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var examples []contractExample
+	if err = json.Unmarshal(data, &examples); err != nil {
+		t.Fatal(err)
+	}
+	return examples
+}
+func TestCoreContracts(t *testing.T) {
+	for _, example := range examples(t) {
+		payload, err := base64.StdEncoding.DecodeString(example.Input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		headers := example.Headers
+		if headers == nil {
+			headers = map[string]any{}
+		}
+		output, err := Process(payload, headers)
+		if example.ExpectedError {
+			if !errors.Is(err, ErrInvalidInput) {
+				t.Fatalf("invalid input must wrap ErrInvalidInput, got %v", err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		expected, err := base64.StdEncoding.DecodeString(*example.Output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(expected, output) {
+			t.Fatalf("output differs: expected %q, got %q", expected, output)
+		}
+		if example.Topics != nil {
+			topics, err := outputTopics(headers, "unused")
+			if err != nil || !reflect.DeepEqual(topics, example.Topics) {
+				t.Fatalf("routing differs: %v %v", topics, err)
+			}
+		}
+	}
+}
+func signatureFor(payload []byte, timestamp int64, secret string) string {
+	prefix := fmtTimestamp(timestamp)
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(prefix + "."))
+	_, _ = mac.Write(payload)
+	return "t=" + prefix + ",v1=" + hex.EncodeToString(mac.Sum(nil))
+}
+func TestStripeSignature(t *testing.T) {
+	payload := []byte(`{"id":"evt_fixture"}`)
+	secret := "fixture-only-signing-key"
+	now := time.Now().Unix()
+	signature := signatureFor(payload, now, secret)
+	if stripeSignature(payload, signature, secret, now) != nil {
+		t.Fatal("valid signature rejected")
+	}
+	for _, test := range []struct {
+		payload   []byte
+		signature string
+		secret    string
+	}{{[]byte("changed"), signature, secret}, {payload, signature, "wrong"}, {payload, "", secret}, {payload, signatureFor(payload, now-301, secret), secret}, {payload, signatureFor(payload, now+301, secret), secret}} {
+		if stripeSignature(test.payload, test.signature, test.secret, now) == nil {
+			t.Fatal("invalid signature accepted")
+		}
+	}
+}
+func TestRouteControlsCannotArriveFromTransport(t *testing.T) {
+	headers := safeHeaders(map[string]any{"mi_output_topics": []string{"attacker/topic"}, "scst_targetDestination": "attacker/topic", "Stripe-Signature": "sensitive"})
+	if len(headers) != 0 {
+		t.Fatal("routing/signature control leaked")
+	}
+	for _, value := range []any{[]string{}, []string{"bad/>"}, "topic"} {
+		if _, err := outputTopics(map[string]any{"mi_output_topics": value}, "fallback"); err == nil {
+			t.Fatal("invalid route accepted")
+		}
+	}
+}
+func BenchmarkCore(b *testing.B) {
+	for _, example := range examples(b) {
+		if example.Output == nil {
+			continue
+		}
+		payload, _ := base64.StdEncoding.DecodeString(example.Input)
+		b.ReportAllocs()
+		b.SetBytes(int64(len(payload)))
+		b.ResetTimer()
+		for b.Loop() {
+			headers := make(map[string]any, len(example.Headers)+4)
+			for key, value := range example.Headers {
+				headers[key] = value
+			}
+			if _, err := Process(payload, headers); err != nil {
+				b.Fatal(err)
+			}
+		}
+		return
+	}
+}

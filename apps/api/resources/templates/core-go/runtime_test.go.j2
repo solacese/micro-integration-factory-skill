@@ -1,0 +1,42 @@
+package main
+
+import (
+	"bytes"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func TestSharedConfigLoadsRuntimeCredentials(t *testing.T) {
+	t.Setenv("FACTORY_TEST_API_TOKEN", "")
+	path := filepath.Join(t.TempDir(), "mi-config.yaml")
+	yaml := []byte("broker:\n  smf-url: tcp://localhost:55555\n  amqp-url: amqp://localhost:5672\n  vpn: default\n  username: test\n  password: fixture-only\nmessaging:\n  input-topic: mi/in\n  output-topic: mi/out\n  subscription: test\n  error-topic: mi/error\nwebhook:\n  provider: none\n  signing-secret: ''\ncredentials:\n  FACTORY_TEST_API_TOKEN: fixture-only-token\n")
+	if err := os.WriteFile(path, yaml, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadConfig(path); err != nil {
+		t.Fatal(err)
+	}
+	if os.Getenv("FACTORY_TEST_API_TOKEN") != "fixture-only-token" {
+		t.Fatal("shared credential was not loaded")
+	}
+}
+func TestUnsignedWebhookIsRejectedBeforePublishing(t *testing.T) {
+	var config Config
+	config.Webhook.Provider = "stripe"
+	config.Webhook.SigningSecret = "fixture-key"
+	broker := &brokerTransport{config: config}
+	request := httptest.NewRequest("POST", "/ingest", bytes.NewReader([]byte(`{"id":"evt_fixture"}`)))
+	response := httptest.NewRecorder()
+	broker.handler().ServeHTTP(response, request)
+	if response.Code != 422 {
+		t.Fatalf("unsigned request returned %d", response.Code)
+	}
+}
+func TestPublisherCannotAcknowledgeWithoutConnection(t *testing.T) {
+	broker := &brokerTransport{}
+	if err := broker.publish(t.Context(), []byte("payload"), map[string]any{}, []string{"topic/out"}); err == nil {
+		t.Fatal("publication was falsely acknowledged")
+	}
+}

@@ -1,78 +1,81 @@
 # MI Factory
 
-Describe the behavior, build **Core.java**, and download **MI v1**.
+Describe an integration. Confirm the API and transport. Download **Java**, **Go**, and one **shared YAML**.
 
-[Open the factory](https://solacese.github.io/micro-integration-factory-skill/demo.html)
+[Open MI Factory](https://solacese.github.io/micro-integration-factory-skill/demo.html)
 
-The dark, minimal website has chat on the left, build status on the right, and one download button.
+The dark IDE-style page keeps chat on the left and status, measured performance, and downloads on the right. Square edges, three normal user actions, at most five conversational turns:
 
-1. **Describe** what comes in and what should come out.
-2. **Confirm** the service/API after reviewing its official documentation link and proposed Java library or JDK approach. Click **Yes, generate MI v1** or type **yes**. Choose **Change service** to correct the selection.
-3. **Download** the complete MI: Core.java bundled with its runtime, installation scripts, and contract tests.
+1. **Describe** the input, output and intended service.
+2. **Confirm** the official API documentation, library and protocol proposal. Java uses the Solace MI SDK dependency platform over SMF. The agent chooses Go SMF or AMQP based on the required capabilities; AMQP is not mandatory.
+3. **Download** after **both generated projects** build, pass their contract examples, and pass a real **1,000 messages/s** delivery test. Java is green, Go blue, shared configuration grey.
 
-A short clarification stays in the same chat, with a five-user-turn maximum per draft. No code is generated before confirmation, and the confirmed API plan is included in generation.json. The advisor researches primary documentation and uses SAP AI Core to write the core Java business logic. A deterministic packager adds the standard runtime.
+Compilation and performance testing take several minutes. Downloads stay locked if either runtime fails. The advisor researches primary sources before generation; its confirmed API plan and source provenance are recorded in generation.json. Native source triggers such as CDC require a real upstream connector; a payload processor is not silently presented as a complete source connector.
 
+## Install an MI
 
-## Use Claude Code
-
-With Claude Code already connected to your AI Core provider:
-
-```bash
-./mi "Build an MI that uppercases the name field in JSON and rejects a missing name"
-```
-
-Or install the personal shortcut once:
-
-```bash
-python3 scripts/install-claude-skill.py
-mi-factory "Build my integration"
-```
-
-The installer adds `/build-mi` and the `mi-factory` launcher. It preserves existing provider, authentication, and permission settings. [The workflow](docs/agent/core-java-workflow.md) tells Claude to research real APIs, package the core, run contract checks, and verify an actual broker round trip when a runtime test is requested.
-
-## What the download contains
-
-- **Core.java** — the one editable business-logic file.
-- A fixed Java 17 runtime using the Solace MDK 4.3.11 dependency platform, Spring Boot 4, Jackson 3, and Spring Cloud Stream.
-- Solace topic ingress/egress, HTTP `/ingest`, correlation IDs, failure propagation, health, and a separate error queue.
-- Docker installation, executable input/output contract examples, and a real broker smoke test.
-- `generation.json` with assumptions, fetched source provenance, and separate verification states.
-
-After unzipping, run:
+Docker with Compose is sufficient. Unzip either runtime, then:
 
 ```bash
 ./scripts/install.sh --demo
 ./scripts/smoke.sh --demo
 ```
 
-Docker and Compose are sufficient; host Java and Maven are optional. For an existing broker, run `install.sh` once, edit the generated `.env`, and run it again. The generated README includes host/container addressing and stopping instructions.
+This starts an isolated local broker and verifies correlated output bytes and every expected destination. Demo credentials and Stripe signatures are synthetic. It does not contact your Stripe or Salesforce account.
 
-The smoke test publishes a unique input message, receives the correlated result on the output topic, and compares the bytes with the contract. A generated zip is **not** reported as compiled, deployed, or tested until those checks run. Native source triggers such as database CDC need a real upstream connector; the advisor must not silently replace them with a stub or payload processor.
-
-## Run or deploy the advisor
-
-The current advisor is independent of the historical PostgreSQL/Redis control plane. Supply SAP AI Core credentials only through the server environment or AWS Secrets Manager. The browser receives no credentials.
+For your broker, complete **config/mi-config.yaml** and run:
 
 ```bash
-cd apps/api
-uv sync
-# Export SAP_CLIENT_ID, SAP_CLIENT_SECRET, SAP_AUTH_URL, SAP_API_BASE_URL,
-# SAP_RESOURCE_GROUP, AI_CORE_DEPLOYMENT_ID, and AI_CORE_MODEL server-side.
-PYTHONPATH=src uv run uvicorn spec2event.advisor_app:app --host 127.0.0.1 --port 8087
+./scripts/install.sh
+./scripts/smoke.sh
 ```
 
-Set `docs/demo-config.json` to that API's base URL when previewing locally, then serve `docs/` on port 8086. Restore the deployed URL before publishing.
+The grey YAML download is byte-identical to the file included in both ZIPs. Fill it once and copy it into either project. It holds SMF/AMQP endpoints, VPN, username/password, topics, webhook signing secret and declared external API credentials. Use the AMQP endpoint for the selected VPN; its port or TLS virtual hostname selects that VPN. Keep completed configuration private.
 
-To deploy the small Lambda advisor using a private env file:
+The editable business logic is **Core.java** or **core.go**. The surrounding runtime supplies ingress, output acknowledgements, bounded concurrency, health, installation and tests. Go AMQP is a portable static binary. Go SMF uses the official Solace Go API and its native CGO library, packaged in Docker. Java uses Java 17, Solace MDK 4.3.11, Spring Boot 4 and the native Solace JCSMP API. Both support raw bytes and declared JSON Schema, XML/XSD, Avro or Protobuf logic; actual format coverage depends on the generated core and its tests.
+
+Stripe projects verify raw-body HMAC signatures with a five-minute window, use HTTP-only ingress, and test fan-out with signed fixtures. Their README explains Stripe CLI and deployed HTTPS setup. Retries can produce duplicates; fan-out is not atomic. Deduplicate by source event ID when needed.
+
+## What performance results mean
+
+The private worker builds and executes the **actual generated cores**, not a previously tested template. Each runtime runs separately with a 2 CPU limit against an isolated broker (4 CPU), with a separate 2 CPU load generator, after ten seconds of warmup. It offers 1,020 inputs/s for ten seconds so the measured end-to-end delivery rate must remain at least 1,000/s even after tail drain. Every expected output topic and output bytes are checked; missing messages, duplicate routes or errors fail the gate.
+
+The page shows achieved rate, peak one-second rate, p95/p99 latency and peak sampled memory for Java and Go. Each ZIP includes **validation.json**, **benchmark.csv**, and verification states in **generation.json**. This fixed-load qualification is not maximum capacity, a long soak, live vendor capacity, production readiness or exactly-once proof. Required external API credentials/mocks must be available for tests; unsupported or unverified code remains locked. Changes to a core, its dependencies or configuration require fresh testing.
+
+## Use Claude Code
+
+Keep the existing AI Core provider setup:
+
+```bash
+python3 scripts/install-claude-skill.py
+mi-factory "Listen to signed Stripe webhooks and route customer transactions to Solace topics"
+```
+
+Or run `./mi "Build my integration"`. The installer updates `/build-mi` and the launcher while preserving provider authentication and permission settings. The [workflow](docs/agent/core-java-workflow.md) requires researched APIs, an appropriate transport, equivalent cores, and real tests before delivery.
+
+Package and qualify a supplied spec locally:
+
+```bash
+uv sync --project apps/api
+apps/api/.venv/bin/python scripts/create-mi.py SPEC.json --both --validate --output ./output
+```
+
+Without `--validate`, CLI packaging is explicitly unverified and generation.json records not_run. Samples are in apps/api/resources/samples/core-java. Do not treat a source ZIP as runtime evidence.
+
+## Deploy the factory
+
+The browser receives no AI Core credentials. The Lambda advisor uses Secrets Manager; the isolated build worker receives no AI credentials. Private S3 artifacts expire after one day, downloads use short-lived signed URLs, and global/per-client budgets bound public usage. Code executes inside unprivileged containers without the worker Docker socket or AWS variables; metadata/private host networks are blocked.
 
 ```bash
 PYTHONPATH=apps/api/src apps/api/.venv/bin/python infra/advisor/deploy.py \
   --ai-core-env /private/path/ai-core.env
 ```
 
-See [the credential field names](infra/advisor/.env.example). The script packages the backend and runtime templates, stores credentials in Secrets Manager, configures bounded public usage, and writes the endpoint into `docs/demo-config.json`. GitHub Pages publishes `docs/` on a push to `main`.
+The script provisions the Lambda advisor, private validation bucket and bounded CodeBuild worker, updates IAM for those resources, and writes docs/demo-config.json. GitHub Pages publishes docs/ when main is pushed. The worker is limited to one concurrent job, fifteen minutes per build and twenty submitted jobs per day. Build/benchmark time is additional to AI generation.
 
-## Verify changes
+For local API development, export the [server credential fields](infra/advisor/.env.example), VALIDATION_BUCKET and VALIDATION_PROJECT, then run `PYTHONPATH=src uv run uvicorn spec2event.advisor_app:app --host 127.0.0.1 --port 8087` in apps/api. Point docs/demo-config.json at it and serve docs/ on port 8086; restore the deployed URL before publishing. An unconfigured worker fails closed.
+
+## Verify repository changes
 
 ```bash
 cd apps/api
@@ -80,8 +83,4 @@ uv sync --group dev
 PYTHONPATH=src uv run pytest -q
 ```
 
-Use Java 17+ and Maven to enable the generated-project compilation tests. The new tests exercise project packaging, contract execution, AI Core OAuth refresh and tool-call continuity, source provenance, blocked redirects, soft 404s, and truthful build states. Live AI and broker checks are separate from mocked provider tests.
-
-The old full control-plane UI and templates remain in `apps/web`, `apps/api`, and `archive/` for historical use; they are not the public v1 experience. The prior EC2 deployment remains retired. The current public advisor is a separate small deployment.
-
-Webhook requests such as “listen to Stripe webhooks and post customer transactions to multiple Solace topics” first confirm Stripe Webhooks and its official documentation, then generate a v1 using stated topic defaults. Stripe projects include raw-body signature verification, HTTP-only intake, signed local fixtures, and a broker test that checks every expected destination. The download explains local Stripe CLI setup and the HTTPS/signing-secret requirements for connecting a real account. Multi-topic fan-out is not atomic, and downstream consumers must handle duplicate events.
+Use Java 17 and Maven for generated-project compilation tests. Provider mocks and packaging tests are separate from actual broker and cloud qualification. CI exercises fresh Java and Go installations. The historical control plane remains in apps/web and archive/; it is not the public factory and its former EC2 deployment stays retired.

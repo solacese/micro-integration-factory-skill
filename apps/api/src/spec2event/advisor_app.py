@@ -23,7 +23,21 @@ advisor = AdvisorService()
 class ChatRequest(BaseModel):
     messages: list[dict] = Field(min_length=1, max_length=16)
     coreJava: str = Field(default="", max_length=45_000)
+    coreGo: str = Field(default="", max_length=45_000)
     confirmationToken: str = Field(default="", max_length=24_000)
+
+
+class ValidationRequest(BaseModel):
+    jobId: str = Field(min_length=32, max_length=32)
+    validationToken: str = Field(max_length=2000)
+
+
+@app.post("/validation/status")
+def validation_status(request: ValidationRequest):
+    try:
+        return advisor.validator.status(request.jobId, request.validationToken)
+    except ValueError as error:
+        raise HTTPException(400, str(error)) from None
 
 
 @app.get("/health")
@@ -38,7 +52,9 @@ def health():
 @app.post("/chat")
 def chat(request: ChatRequest):
     try:
-        return advisor.respond(request.messages, request.coreJava, request.confirmationToken)
+        return advisor.respond(
+            request.messages, request.coreJava, request.confirmationToken, request.coreGo
+        )
     except ValueError as error:
         raise HTTPException(400, str(error)) from None
     except (RuntimeError, TimeoutError):

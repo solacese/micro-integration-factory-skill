@@ -1,0 +1,41 @@
+# {{ name }} — lightweight Go MI v1
+
+{{ description }}
+
+Business logic lives in **core.go**. {% if transport == 'amqp' %}The fixed runtime uses pure-Go AMQP 1.0, one reusable anonymous sender for output topics, bounded concurrency and explicit broker acceptance checks. It builds into one static binary without a JVM or C libraries.{% else %}The fixed runtime uses the official Solace Go API 1.10.1 over native SMF, bounded concurrency and persistent publication acknowledgements. Its CGO build includes the SDK native C library and a minimal Debian runtime; Docker provides these dependencies.{% endif %} This is an alternative implementation; it does not run the Java Solace MI SDK.
+
+## Start
+
+The grey YAML download and **config/mi-config.yaml** included here are the same file included in the Java download. Fill it once and copy it into either project's config directory. It contains the SMF and AMQP endpoints, common VPN credentials, topics, webhook signing secret, and any required API credentials. Keep filled configuration private. For Go AMQP, use the AMQP endpoint belonging to the same VPN (the endpoint port or TLS virtual hostname selects that VPN). TLS uses system certificate verification; no insecure certificate bypass is enabled.
+
+```bash
+./scripts/install.sh --demo
+./scripts/smoke.sh --demo
+```
+
+Docker and Compose are sufficient. Demo mode creates config/mi-demo.yaml with local broker settings and a clearly marked fixture signing key. It does not overwrite your shared config. For an existing broker, complete config/mi-config.yaml then run `./scripts/install.sh` and `./scripts/smoke.sh`.
+
+For local Go development:
+
+```bash
+./scripts/verify.sh
+./mi -config config/mi-config.yaml
+# Measure your generated core, including allocation counts:
+go test -run '^$' -bench BenchmarkCore -benchmem
+```
+
+Go 1.26+ is required for host builds; Docker builds use Go 1.27.3. Benchmarks measure Core only, not broker/network throughput. Website downloads include validation.json and benchmark.csv from actual build, contract and isolated 1,000 messages/s tests of both generated runtimes. These use synthetic fixtures, not live vendor accounts. CLI packaging without --validate records not_run. Changes to the core or config require fresh verification and performance tests. Fixed-load results do not establish maximum capacity.
+
+## Messaging and failures
+
+HTTP POST /ingest accepts raw bytes. It returns 202 only after every output publication is acknowledged by the broker; failed publication returns 503. Set `headers["mi_output_topics"] = []string{"topic/one", "topic/two"}` in Process to fan out. Topics must be concrete and bounded to sixteen. Input routing headers cannot select output destinations. Go Process must be safe for concurrent calls and use explicit timeouts for outbound HTTP.
+
+{% if webhook == 'stripe' %}
+Stripe intake verifies HMAC-SHA256 against the raw bytes with a five-minute timestamp window before invoking Process. Unsigned/invalid webhooks are rejected, and broker ingress is disabled. The smoke script sends a signed synthetic HTTP event and checks every expected Solace output topic. This does not connect to a real Stripe account. Use `stripe listen --forward-to http://localhost:18080/ingest`, put its signing secret in webhook.signing-secret, and rerun install.sh --demo. Live Stripe delivery requires your deployed HTTPS /ingest endpoint and that endpoint's signing secret.
+{% else %}
+Broker ingress uses a durable {% if transport == "smf" %}SMF queue{% else %}AMQP topic endpoint{% endif %} named by messaging.subscription and subscribed to messaging.input-topic. The client profile must allow endpoint creation. Do not change a live durable subscription's input topic without draining it: the broker can discard its queued messages when the subscription changes. Input is acknowledged only after output publication succeeds. Failed processing is retried (up to three times), then published to messaging.error-topic before acknowledgement. The runtime provisions a durable error topic endpoint named with the subscription plus -errors before it starts consuming, so failed events are retained. If error publication fails the input is released for redelivery.
+{% endif %}
+
+Retries and partial fan-out failures can duplicate events. Deduplicate using the source event ID when required; this v1 does not offer atomic fan-out or exactly-once processing. Transport endpoint semantics differ from the Java Spring binder's queues and error queues, while the message payload/routing contract and configuration are shared.
+
+Stop the local demo with `docker compose -f compose.yaml -f compose.demo.yaml down`.
