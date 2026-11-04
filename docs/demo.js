@@ -32,7 +32,7 @@
   function confirmService() {
     var actions = document.createElement('div'); actions.className = 'confirm-actions';
     var yes = document.createElement('button'); yes.type = 'button'; yes.className = 'confirm-yes'; yes.textContent = 'Yes, build and test both';
-    yes.onclick = function () { submit('Yes, build and test both'); };
+    yes.onclick = function () { submit('yes'); };
     var change = document.createElement('button'); change.type = 'button'; change.className = 'quiet'; change.textContent = 'Change service';
     change.onclick = function () { clearConfirmationActions(); input.placeholder = 'Which service or API should I use instead?'; input.focus(); };
     actions.append(yes, change); messages.lastElementChild.appendChild(actions); messages.scrollTop = messages.scrollHeight;

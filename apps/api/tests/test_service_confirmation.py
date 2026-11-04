@@ -331,3 +331,9 @@ def test_vendor_source_verifies_salesforce_when_doc_pages_reject_server_requests
     assert service["documentation"].startswith("https://developer.salesforce.com/")
     assert service["verificationUrl"].startswith("https://raw.githubusercontent.com/forcedotcom/")
     assert "Verified vendor reference" in result["content"]
+
+
+@pytest.mark.parametrize('reply',['yes','Yes, build and test both','Yes, build and benchmark both'])
+def test_download_confirmation_action_is_an_affirmation(reply):
+    assert service_confirmation.affirmative(reply)
+    assert service_confirmation.resolve_request([{'role':'user','content':REQUEST},{'role':'user','content':reply}])==REQUEST

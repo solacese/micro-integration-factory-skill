@@ -21,6 +21,8 @@ VENDOR_REFERENCES = {
     "Salesforce SOAP API": "https://raw.githubusercontent.com/forcedotcom/wsc/master/README.md",
 }
 AFFIRMATIONS = {
+    "yes build and test both",
+    "yes build and benchmark both",
     "yes",
     "yes please",
     "yes generate",
