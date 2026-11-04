@@ -329,7 +329,9 @@ def verified_plan(request: str, sources: list[dict], provider) -> dict:
     # Only provenance is sent in the receipt; excerpts remain evidence for generation after approval.
     unique = {
         source["url"]: {
-            key: source[key] for key in ["url", "title", "fetchedAt", "sha256"] if key in source
+            key: source[key]
+            for key in ["url", "title", "fetchedAt", "sha256", "status"]
+            if key in source
         }
         for source in evidence
         if source.get("status") == "fetched"

@@ -50,6 +50,7 @@ def test_stripe_is_verified_and_proposed_before_any_code_generation(research):
     assert "Inbound HTTPS webhooks" in result["content"]
     assert "no Stripe SDK is needed" in result["content"]
     assert "https://docs.stripe.com/webhooks.md" in research
+    assert result["sources"][0]["url"] == "https://docs.stripe.com/webhooks.md"
 
 
 def test_plain_yes_uses_the_original_request_and_confirmed_api(research):
