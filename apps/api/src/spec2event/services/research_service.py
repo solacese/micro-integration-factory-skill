@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 import time
 import xml.etree.ElementTree as ET
@@ -231,6 +232,18 @@ def fetch_reference(url: str, title: str = "Primary documentation") -> dict:
                     return dict(result)
             raise ValueError("Too many redirects")
     except Exception as error:
+        print(
+            json.dumps(
+                {
+                    "event": "reference_unavailable",
+                    "host": urlsplit(original).hostname,
+                    "reason": type(error).__name__,
+                    "httpStatus": error.response.status_code
+                    if isinstance(error, httpx.HTTPStatusError)
+                    else None,
+                }
+            )
+        )
         return {
             "title": title,
             "url": original,

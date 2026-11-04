@@ -298,6 +298,12 @@ def verified_plan(request: str, sources: list[dict], provider) -> dict:
     evidence = list(sources)
     for service in services:
         source = fetch_reference(service["fetchUrl"], service["name"] + " official documentation")
+        if (
+            source.get("status") != "fetched" or len(source.get("excerpt", "").strip()) < 100
+        ) and service["fetchUrl"] != service["documentation"]:
+            source = fetch_reference(
+                service["documentation"], service["name"] + " official documentation"
+            )
         if source.get("status") != "fetched" or len(source.get("excerpt", "").strip()) < 100:
             raise ValueError(
                 "I could not read the official documentation for "
