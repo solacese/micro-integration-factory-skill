@@ -21,10 +21,12 @@ services:
   smoke:
     profiles: [tools]
     image: maven:3.9.15-eclipse-temurin-17
+    user: "${MI_TEST_UID:-1000}:${MI_TEST_GID:-1000}"
     working_dir: /workspace
     volumes: [".:/workspace"]
     env_file: .env
     extra_hosts: ["host.docker.internal:host-gateway"]
     environment:
+      MAVEN_CONFIG: /tmp/.m2
       MI_SMOKE_BROKER: ${SOLACE_BROKER_URL:-tcp://host.docker.internal:55555}
-    command: ["mvn", "-B", "verify"]
+    command: ["mvn", "-B", "-Duser.home=/tmp", "-Dmaven.repo.local=/tmp/.m2/repository", "verify"]

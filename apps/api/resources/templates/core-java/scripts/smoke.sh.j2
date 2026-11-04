@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Keep generated build artifacts owned by the user on native Linux Docker hosts.
+export MI_TEST_UID="$(id -u)"
+export MI_TEST_GID="$(id -g)"
 case "${1:-}" in
   --demo) docker compose -f compose.yaml -f compose.demo.yaml run --rm --no-deps smoke ;;
   "") docker compose run --rm --no-deps smoke ;;
