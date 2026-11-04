@@ -43,9 +43,16 @@ def spec():
 def generate_after_confirmation(provider, request):
     plan = {"services": [{"name": "Java message processor", "supported": True}], "sources": []}
     token = service_confirmation.seal(plan, request, "")
+
     class UnitPackagingValidator:
         def submit(self, project, sources=None):
-            return {'status':'generated','project':project,'sources':sources or [],'content':'Unit packaging fixture; no runtime qualification claimed.'}
+            return {
+                "status": "generated",
+                "project": project,
+                "sources": sources or [],
+                "content": "Unit packaging fixture; no runtime qualification claimed.",
+            }
+
     return advisor_service.AdvisorService(provider, validator=UnitPackagingValidator()).respond(
         [
             {"role": "user", "content": request},
@@ -449,3 +456,34 @@ def test_exhausted_build_is_a_retryable_service_failure_not_a_missing_requiremen
     assert result["status"] == "build_failed"
     assert "you do not need to narrow" in result["content"]
     assert result["project"] is None
+
+
+def test_model_repairs_go_runtime_symbol_collision_before_starting_validation(monkeypatch):
+    candidate = spec()
+
+    class Provider:
+        rounds = 0
+
+        def complete(self, messages, tools):
+            self.rounds += 1
+            fixed = dict(candidate)
+            if self.rounds == 1:
+                fixed["core_go"] += '\nvar ErrInvalidInput = errors.New("invalid")\n'
+            else:
+                assert any(
+                    "Go runtime already declares ErrInvalidInput" in str(message.get("content", ""))
+                    for message in messages
+                )
+            return {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "id": str(self.rounds),
+                        "function": {"name": "build_v1", "arguments": json.dumps(fixed)},
+                    }
+                ],
+            }
+
+    provider = Provider()
+    result = generate_after_confirmation(provider, "Uppercase UTF-8 input")
+    assert result["status"] == "generated" and provider.rounds == 2

@@ -162,3 +162,18 @@ def test_only_bound_complete_reports_unlock_downloads(monkeypatch, valid):
     objects[prefix + "report.json"]["inputSha256"] = "c" * 64
     with pytest.raises(ValueError):
         service.status(job, service._token(job, digest))
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        'var ErrInvalidInput = errors.New("bad")',
+        "func validTopic(value string)bool{return true}",
+        "type Config struct{}",
+    ],
+)
+def test_generated_core_cannot_redeclare_provided_go_symbols(declaration):
+    spec = sample()
+    spec["core_go"] += "\n" + declaration + "\n"
+    with pytest.raises(ValueError, match="Go runtime already declares"):
+        create_dual_projects(spec)

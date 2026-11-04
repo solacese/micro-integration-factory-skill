@@ -42,7 +42,10 @@ configured YAML credentials into those properties. Go uses os.Getenv("NAME"), lo
 same YAML by its runtime. Add credential NAMES to required_env, never values.
 Go: package main; func Process(payload []byte, headers map[string]any) ([]byte, error).
 Use Go 1.26-compatible standard library APIs, safe for concurrent calls. Invalid input returns
-fmt.Errorf("%w: reason", ErrInvalidInput). Never panic or return nil,nil. The fixed runtime uses the approved SMF or AMQP profile and
+fmt.Errorf("%w: reason", ErrInvalidInput). ErrInvalidInput is ALREADY DECLARED by the runtime;
+do NOT redeclare it or create another errors.New sentinel. The runtime also supplies Config, main,
+loadConfig, validTopic, outputTopics, safeHeaders, correlationID and verifyStripe. Do not redefine
+these globals. Prefix business helper functions with core. Never panic or return nil,nil. The fixed runtime uses the approved SMF or AMQP profile and
 handles durable subscriptions, signed Stripe HTTP intake, bounded concurrency, output
 acknowledgement and retries. Core.go must NOT implement transports, brokers, config, or signatures.
 Set Go routes with headers["mi_output_topics"] = []string{"topic/one", "topic/two"}.

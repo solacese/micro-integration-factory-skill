@@ -80,6 +80,20 @@ def create_dual_projects(spec: dict, sources=None, service_plan=None) -> dict:
         raise ValueError(
             "Go needs a complete Process(payload []byte, headers map[string]any) ([]byte, error), without stubs"
         )
+    reserved = set()
+    for template in GO_TEMPLATES.glob("*.go.j2"):
+        if template.name.endswith("_test.go.j2"):
+            continue
+        reserved.update(
+            re.findall(r"(?m)^(?:var|const|type|func)\s+([A-Za-z_]\w*)", template.read_text())
+        )
+    for symbol in reserved:
+        if re.search(r"\b(?:var|const|type|func)\s+" + re.escape(symbol) + r"\b", core):
+            raise ValueError(
+                "The Go runtime already declares "
+                + symbol
+                + ". Remove that declaration and any now-unused imports from core_go; use the provided runtime symbol. Prefix business helpers with core to avoid collisions."
+            )
     with zipfile.ZipFile(io.BytesIO(base64.b64decode(java["zipBase64"]))) as archive:
         report_path = next(p for p in archive.namelist() if p.endswith("/generation.json"))
         report = json.loads(archive.read(report_path))
