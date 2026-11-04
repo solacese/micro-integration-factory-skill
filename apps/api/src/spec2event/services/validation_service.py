@@ -186,7 +186,10 @@ class ValidationService:
                 }
             original = read("input.json")["project"]
             downloads = {}
-            for language in ["java", "go", "configuration"]:
+            artifact_kinds = ["java", "go", "configuration"]
+            if "tests" in original:
+                artifact_kinds.append("tests")
+            for language in artifact_kinds:
                 item = report.get("downloads", {}).get(language)
                 if not item or not item["key"].startswith(prefix + "downloads/"):
                     raise RuntimeError("Validated artifact is missing")

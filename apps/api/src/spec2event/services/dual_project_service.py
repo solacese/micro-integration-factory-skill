@@ -31,7 +31,7 @@ def shared_configuration(spec: dict, name: str) -> str:
         f"""# One configuration file for either the Java or Go download.
 # Save as config/mi-config.yaml in the project you run. Keep filled credentials private.
 broker:
-  smf-url: "tcp://host.docker.internal:55555" # Java / SMF
+  smf-url: "tcp://host.docker.internal:55555" # Java MDK or Go / SMF
   amqp-url: "amqp://host.docker.internal:5672" # Go / AMQP 1.0; use this VPN's endpoint
   vpn: "default"
   username: "default"
@@ -174,4 +174,8 @@ def create_dual_projects(spec: dict, sources=None, service_plan=None) -> dict:
             archive.writestr(info, content)
     go = artifact(f"{name}-go-mi-v1.zip", buffer.getvalue(), coreGo=core, files=len(files))
     configuration = artifact("mi-config.yaml", config.encode(), contentType="application/yaml")
-    return {**java, "java": java, "go": go, "configuration": configuration, "coreGo": core}
+    from spec2event.services.test_project_service import create_test_project
+
+    project = {**java, "java": java, "go": go, "configuration": configuration, "coreGo": core}
+    project["tests"] = create_test_project(project)
+    return project

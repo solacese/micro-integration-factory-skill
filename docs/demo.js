@@ -25,7 +25,7 @@
   }
   function ui(value) { busy = value; input.disabled = value; send.disabled = value || !endpoint; byId('messages').setAttribute('aria-busy', String(value)); }
   function timer() { var seconds = Math.floor((Date.now() - started) / 1000); byId('timer').textContent = Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0') + ' elapsed'; }
-  function clearArtifact() { project = null; byId('performance').hidden=true; byId('performance').replaceChildren(); ['download','download-go','download-config'].forEach(function(id){byId(id).disabled=true;}); byId('details').textContent = ''; byId('file-status').textContent = 'One behavior. Two complete runtimes.'; }
+  function clearArtifact() { project = null; byId('performance').hidden=true; byId('performance').replaceChildren(); ['download','download-go','download-config','download-tests'].forEach(function(id){byId(id).disabled=true;}); byId('details').textContent = ''; byId('file-status').textContent = 'One behavior. Two complete runtimes.'; }
   function clearConfirmationActions() { messages.querySelectorAll('.confirm-actions').forEach(function (item) { item.remove(); }); }
   function submit(text) {
     if (!text || busy || !endpoint) return;
@@ -91,7 +91,9 @@
         byId('file-status').textContent = 'Java / SMF · Go / ' + String(project.goTransport || '').toUpperCase();
         byId('details').textContent = (data.sources || []).length + ' references checked · ' + project.contractExamples + ' contract examples';
         ['download','download-go','download-config'].forEach(function(id){byId(id).disabled=false;});
-        byId('download-note').textContent = 'Both include install and test scripts. The same YAML works with either. Measured results and per-message CSV are included.';
+        if(project.tests && /^[a-f0-9]{64}$/.test(project.tests.sha256||'') && project.tests.downloadUrl) byId('download-tests').disabled=false;
+        else byId('download-tests').title='Start a new MI to generate its test kit.';
+        byId('download-note').textContent = 'Choose Java MDK or Go, complete the shared YAML, and download the test kit for SDK Perf, samples and measured results.';
       } else { confirmationToken = ''; state(data.status === 'flow_limit' ? 'Start a new MI' : 'One detail needed', data.status === 'flow_limit' ? 'Five turns reached. Choose New MI for a fresh draft.' : 'Reply in the chat to finish your v1.'); }
     } catch (error) {
       if (thisSession !== session) return;
@@ -162,6 +164,7 @@
   byId('download').addEventListener('click',function(){if(project)downloadArtifact(project.java||project);});
   byId('download-go').addEventListener('click',function(){if(project)downloadArtifact(project.go);});
   byId('download-config').addEventListener('click',function(){if(project)downloadArtifact(project.configuration);});
+  byId('download-tests').addEventListener('click',function(){if(project)downloadArtifact(project.tests);});
   function welcome() { append('assistant', 'What should your MI do? I’ll find the official API docs, confirm the service with you, then build your first version.'); }
   async function connect() {
     ui(false); send.disabled = true;

@@ -1,14 +1,14 @@
 # MI Factory
 
-Describe an integration. Confirm the API and transport. Download **Java**, **Go**, and one **shared YAML**.
+Describe an integration. Confirm the API and transport. Download **Java MDK**, **Go**, one **shared YAML**, and a **test ZIP**.
 
 [Open MI Factory](https://solacese.github.io/micro-integration-factory-skill/demo.html)
 
-The dark IDE-style page keeps chat on the left and status, measured performance, and downloads on the right. Square edges, three normal user actions, at most five conversational turns:
+The dark IDE-style page keeps chat on the left and status, measured performance, and four downloads on the right. Square edges, three normal user actions, at most five conversational turns:
 
 1. **Describe** the input, output and intended service.
 2. **Confirm** the official API documentation, library and protocol proposal. Java uses the Solace MI SDK dependency platform over SMF. The agent chooses Go SMF or AMQP based on the required capabilities; AMQP is not mandatory.
-3. **Download** after **both generated projects** build, pass their contract examples, and pass a real **1,000 messages/s** delivery test. Java is green, Go blue, shared configuration grey.
+3. **Download** after **both generated projects** build, pass their contract examples, and pass a real **1,000 messages/s** delivery test. Java MDK is green, Go blue, shared configuration grey, and the test ZIP purple.
 
 Compilation and performance testing take several minutes. Downloads stay locked if either runtime fails. The advisor researches primary sources before generation; its confirmed API plan and source provenance are recorded in generation.json. Native source triggers such as CDC require a real upstream connector; a payload processor is not silently presented as a complete source connector.
 
@@ -31,6 +31,8 @@ For your broker, complete **config/mi-config.yaml** and run:
 ```
 
 The grey YAML download is byte-identical to the file included in both ZIPs. Fill it once and copy it into either project. It holds SMF/AMQP endpoints, VPN, username/password, topics, webhook signing secret and declared external API credentials. Use the AMQP endpoint for the selected VPN; its port or TLS virtual hostname selects that VPN. Keep completed configuration private.
+
+The fourth button downloads an MI-specific test kit: SDKPerf JCSMP publisher/subscriber scripts, exact generated input/output fixtures (including binary and invalid cases), Java/Go test sources, signed webhook samples, the reproducible 1,000 msg/s runner, and both measured reports/CSV files. SDKPerf binaries are installed separately; SDKPerf is optional for the other tests. The kit reads the same YAML and can run on the selected demo network without opening broker ports.
 
 The editable business logic is **Core.java** or **core.go**. The surrounding runtime supplies ingress, output acknowledgements, bounded concurrency, health, installation and tests. Go AMQP is a portable static binary. Go SMF uses the official Solace Go API and its native CGO library, packaged in Docker. Java uses Java 17, Solace MDK 4.3.11, Spring Boot 4 and the native Solace JCSMP API. Both support raw bytes and declared JSON Schema, XML/XSD, Avro or Protobuf logic; actual format coverage depends on the generated core and its tests.
 

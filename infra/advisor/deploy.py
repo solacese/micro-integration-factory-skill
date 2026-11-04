@@ -100,6 +100,8 @@ def deploy(env_file: Path, region: str):
         "apps/api/src/spec2event",
         "apps/api/resources/templates/core-java",
         "apps/api/resources/templates/core-go",
+        "apps/api/resources/templates/test-kit",
+        "infra/validation/loadtest",
         "infra/advisor",
     ]:
         shutil.copytree(

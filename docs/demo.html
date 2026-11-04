@@ -5,7 +5,7 @@
 <meta name="color-scheme" content="dark"><link rel="icon" type="image/png" href="assets/factory-pipes-logo.png">
 <title>MI Factory</title>
 <meta name="description" content="Describe an integration. Confirm the API and transport. Download tested Java and Go MIs.">
-<link rel="stylesheet" href="demo.css?v=b7fe8577c3">
+<link rel="stylesheet" href="demo.css?v=8312cb3b3b">
 </head>
 <body>
 <header><div class="brand"><img src="assets/factory-pipes-logo.png" alt="A friendly factory making pipes" width="82" height="58"><strong>MI <span>Factory</span></strong></div><button class="quiet" id="reset" type="button">New MI</button></header>
@@ -22,13 +22,14 @@
   <div id="timer"></div>
   <div class="file"><div class="file-name">Core.java + core.go</div><div class="file-sub" id="file-status">One behavior. Two complete runtimes.</div></div>
   <div id="details"></div>
-  <section class="performance" id="performance" aria-label="Measured performance" hidden></section>
-  <button id="download" type="button" disabled>Java · Solace MI SDK</button>
+  <button id="download" type="button" disabled>Java · MDK</button>
   <button id="download-go" type="button" disabled>Go · native binary</button>
-  <button id="download-config" type="button" disabled>Shared config · YAML</button>
+  <button id="download-config" type="button" disabled>Config · YAML</button>
+  <button id="download-tests" type="button" disabled>Tests · SDK Perf + samples</button>
   <p class="download-note" id="download-note">Downloads unlock after both builds pass 1,000 messages/s. One YAML config works with either runtime.</p>
+  <section class="performance" id="performance" aria-label="Measured performance" hidden></section>
 </aside>
 </main>
-<script src="demo.js?v=0d5e72855b" defer></script>
+<script src="demo.js?v=3d4f083feb" defer></script>
 </body>
 </html>

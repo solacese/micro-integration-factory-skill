@@ -25,7 +25,7 @@ parser.add_argument(
     help="Explicit Go wire protocol (otherwise use the designed spec)",
 )
 parser.add_argument(
-    "--both", action="store_true", help="Package Java, Go, and shared YAML"
+    "--both", action="store_true", help="Package Java, Go, shared YAML and a test ZIP"
 )
 parser.add_argument(
     "--validate",
@@ -56,7 +56,7 @@ if args.validate:
             check=True,
         )
     sys.exit(0)
-items = [result["java"], result["go"]] if args.both else [result]
+items = [result["java"], result["go"], result["tests"]] if args.both else [result]
 for item in items:
     content = base64.b64decode(item["zipBase64"])
     archive = args.output / item["filename"]

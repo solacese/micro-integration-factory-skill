@@ -137,6 +137,41 @@ def enrich_archive(original: bytes, report: dict, metrics: dict, csv: bytes):
     return output.getvalue()
 
 
+def enrich_test_archive(original, report, artifacts):
+    output = io.BytesIO()
+    with (
+        zipfile.ZipFile(io.BytesIO(original)) as source,
+        zipfile.ZipFile(output, "w", zipfile.ZIP_DEFLATED) as archive,
+    ):
+        root = source.namelist()[0].split("/")[0]
+        for info in source.infolist():
+            data = source.read(info.filename)
+            if info.filename.endswith("/test-manifest.json"):
+                metadata = json.loads(data)
+                metadata["verification"] = "passed"
+                metadata["evidence"] = [
+                    "reports/validation.json",
+                    "reports/java.csv",
+                    "reports/go.csv",
+                ]
+                data = json.dumps(metadata, indent=2).encode()
+            archive.writestr(info, data)
+        for name, data in [
+            ("validation.json", json.dumps(report, indent=2).encode()),
+            *[
+                (language + ".csv", artifacts[language]["csv"])
+                for language in ["java", "go"]
+            ],
+        ]:
+            info = zipfile.ZipInfo(
+                root + "/reports/" + name, date_time=(2026, 1, 1, 0, 0, 0)
+            )
+            info.external_attr = 0o100644 << 16
+            info.compress_type = zipfile.ZIP_DEFLATED
+            archive.writestr(info, data)
+    return output.getvalue()
+
+
 def sandbox_network():
     # Containers never receive AWS variables, Docker socket mounts, or access to host metadata.
     run(["iptables", "-N", "MI_FACTORY_SANDBOX"]) if subprocess.run(
@@ -484,6 +519,10 @@ def validate(project: dict, work: Path, progress=lambda *a: None):
         for language in ["java", "go"]
     }
     finished["configuration"] = base64.b64decode(project["configuration"]["zipBase64"])
+    if "tests" in project:
+        finished["tests"] = enrich_test_archive(
+            base64.b64decode(project["tests"]["zipBase64"]), report, artifacts
+        )
     return report, finished
 
 
@@ -508,6 +547,8 @@ def main():
                 / (
                     "mi-config.yaml"
                     if language == "configuration"
+                    else "mi-tests.zip"
+                    if language == "tests"
                     else language + "-mi-v1.zip"
                 )
             ).write_bytes(data)
