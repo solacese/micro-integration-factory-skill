@@ -1,16 +1,22 @@
 # MI Factory
 
-Describe an integration. Confirm the API and transport. Download **Java MDK**, **Go**, one **shared YAML**, and a **test ZIP**.
+Describe an integration. Check whether it should be built. Confirm the API and transport. Download **Java MDK**, **Go**, one **shared YAML**, and a **test ZIP**.
 
 [Open MI Factory](https://solacese.github.io/micro-integration-factory-skill/demo.html)
 
 The dark IDE-style page keeps chat on the left and status, measured performance, and four downloads on the right. Square edges, three normal user actions, at most five conversational turns:
 
-1. **Describe** the input, output and intended service.
-2. **Confirm** the official API documentation, library and protocol proposal. Java uses the Solace MI SDK dependency platform over SMF. The agent chooses Go SMF or AMQP based on the required capabilities; AMQP is not mandatory.
+1. **Describe** the input, output and intended service. The factory checks all 111 downloaded [Solace Integration Hub](https://solace.com/integration-hub/) entries and qualifies the fit before writing code.
+2. **Review** the recommendation. Reuse an existing asset when its API, direction and configurable transformations cover the request. For a justified custom gap, confirm the scope, official API, library and protocol together with one Yes. Java uses Solace MDK over SMF; Go uses SMF or AMQP as appropriate.
 3. **Download** after **both generated projects** build, pass their contract examples, and pass a real **1,000 messages/s** delivery test. Java MDK is green, Go blue, shared configuration grey, and the test ZIP purple.
 
 Compilation and performance testing take several minutes. Downloads stay locked if either runtime fails. The advisor researches primary sources before generation; its confirmed API plan and source provenance are recorded in generation.json. Native source triggers such as CDC require a real upstream connector; a payload processor is not silently presented as a complete source connector.
+
+The fit check recommends **reuse**, requests an **architecture review**, asks one essential question, or approves a **custom build**. For example, ordinary Salesforce Pub/Sub event movement should use the Salesforce integration, and a plain Kafka bridge should use the broker-integrated bridge. Salesforce REST record CRUD is a different API; a vendor-name match alone does not establish coverage. A custom processor on top of an existing connector requires that upstream prerequisite to be explicitly confirmed.
+
+Hard latency SLOs, input rates above the factory's tested 1,000/s profile, payloads above 1 MiB, strict ordering, cross-system atomicity/exactly-once, or durable workflows need further design and qualification. These are limits of this generated profile and its tests, not claims about all Solace micro-integrations. A reuse or architecture-review decision cannot approve generation. Refinements are requalified within the same five-turn conversation limit.
+
+The complete Hub snapshot contains all **111 unique listings and their detail pages**, downloaded on 2026-11-04 across ten pages, with source URLs, HTML hashes, descriptions, directions, asset types, support, deployment and documentation links. The architect sees every entry, with expanded evidence for likely matches. It also attempts live refreshes; blocked access is labelled honestly. A missing result never proves that no integration exists elsewhere. Both generation.json files retain the signed, reviewed suitability decision and API plan.
 
 ## Install an MI
 
@@ -63,6 +69,18 @@ apps/api/.venv/bin/python scripts/create-mi.py SPEC.json --both --validate --out
 ```
 
 Without `--validate`, CLI packaging is explicitly unverified and generation.json records not_run. Samples are in apps/api/resources/samples/core-java. Do not treat a source ZIP as runtime evidence.
+
+Use `--assessment assessment.json` to retain a reviewed custom-build assessment with CLI packaging. Direct packaging without it records `not_assessed`; a non-build assessment is rejected.
+
+Refresh and evaluate the catalog:
+
+```bash
+apps/api/.venv/bin/python scripts/refresh-integration-hub.py --expected-count 111
+apps/api/.venv/bin/python scripts/evaluate-suitability.py \
+  --ai-core-env /private/path/ai-core.env --output ./output/suitability-evaluation.json
+```
+
+The downloader verifies pagination totals, unique URLs and successful detail downloads before replacing the snapshot. It keeps raw pages under .runtime/integration-hub-download. The evaluator exercises a recommendation for every entry plus natural-language reuse, API/direction mismatch, custom-gap and architecture cases through the real AI Core provider. It does not generate code, contact connected business systems or submit benchmark jobs. Use `--natural-only` for a shorter replay; these model evaluations are separate from deterministic CI tests.
 
 ## Deploy the factory
 

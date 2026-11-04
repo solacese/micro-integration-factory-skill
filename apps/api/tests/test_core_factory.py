@@ -41,7 +41,11 @@ def spec():
 
 
 def generate_after_confirmation(provider, request):
-    plan = {"services": [{"name": "Java message processor", "supported": True}], "sources": []}
+    plan = {
+        "services": [{"name": "Java message processor", "supported": True}],
+        "sources": [],
+        "qualification": {"version": 1, "decision": "build", "customGap": "Fixture transformation"},
+    }
     token = service_confirmation.seal(plan, request, "")
 
     class UnitPackagingValidator:

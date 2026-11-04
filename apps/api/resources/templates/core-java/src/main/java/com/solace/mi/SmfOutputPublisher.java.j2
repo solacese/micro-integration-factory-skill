@@ -3,6 +3,9 @@ package com.solace.mi;
 import com.solacesystems.jcsmp.*;
 import org.springframework.core.env.Environment;
 import java.util.Map;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -43,27 +46,39 @@ public final class SmfOutputPublisher implements OutputPublisher, AutoCloseable 
     public boolean ready() { return connected.get() && !session.isClosed(); }
     private void failPending() { pending.keySet().forEach(f -> f.completeExceptionally(new IllegalStateException("Publisher unavailable"))); }
     @Override public void publish(byte[] payload, Map<String,Object> headers,String topic) {
+        publishAll(payload,headers,Collections.singletonList(topic));
+    }
+    @Override public void publishAll(byte[] payload, Map<String,Object> headers,List<String> topics) {
+        if (topics.isEmpty() || topics.size()>16) throw new IllegalArgumentException("Invalid route count");
         boolean acquired=false;
-        var acknowledged=new CompletableFuture<Void>();
+        var acknowledgements=new ArrayList<CompletableFuture<Void>>();
         try {
-            if (!ready() || !(acquired=slots.tryAcquire(2,TimeUnit.SECONDS))) throw new IllegalStateException("Publisher unavailable");
-            var message=JCSMPFactory.onlyInstance().createMessage(BytesMessage.class);
-            message.setData(payload);
-            message.setDeliveryMode(DeliveryMode.PERSISTENT);
-            var properties=JCSMPFactory.onlyInstance().createMap();
-            for (var entry:headers.entrySet()) properties.putObject(entry.getKey(),entry.getValue());
-            message.setProperties(properties);
-            message.setCorrelationKey(acknowledged);
-            pending.put(acknowledged,Boolean.TRUE);
-            producer.send(message,JCSMPFactory.onlyInstance().createTopic(topic==null?defaultTopic:topic));
-            acknowledged.get(10,TimeUnit.SECONDS);
+            // Reserve a whole fan-out before sending; partial slot reservations
+            // could otherwise deadlock concurrent calls at the in-flight limit.
+            if (!ready() || !(acquired=slots.tryAcquire(topics.size(),2,TimeUnit.SECONDS))) throw new IllegalStateException("Publisher unavailable");
+            for (String topic:topics) {
+                var acknowledged=new CompletableFuture<Void>();
+                acknowledgements.add(acknowledged);
+                var message=JCSMPFactory.onlyInstance().createMessage(BytesMessage.class);
+                message.setData(payload);
+                message.setDeliveryMode(DeliveryMode.PERSISTENT);
+                var properties=JCSMPFactory.onlyInstance().createMap();
+                for (var entry:headers.entrySet()) properties.putObject(entry.getKey(),entry.getValue());
+                message.setProperties(properties);
+                message.setCorrelationKey(acknowledged);
+                pending.put(acknowledged,Boolean.TRUE);
+                producer.send(message,JCSMPFactory.onlyInstance().createTopic(topic==null?defaultTopic:topic));
+            }
+            // Send every route before waiting for windowed ACKs. A one-second
+            // tail ACK for route one must not delay publication to route two.
+            CompletableFuture.allOf(acknowledgements.toArray(CompletableFuture[]::new)).get(10,TimeUnit.SECONDS);
         } catch (InterruptedException error) {
             Thread.currentThread().interrupt();throw new IllegalStateException("Publication interrupted");
         } catch (Exception error) {
             throw new IllegalStateException("Output publication was not acknowledged ("+error.getClass().getSimpleName()+")");
         } finally {
-            pending.remove(acknowledged);
-            if (acquired) slots.release();
+            acknowledgements.forEach(pending::remove);
+            if (acquired) slots.release(topics.size());
         }
     }
     @Override public void close() { connected.set(false);failPending();producer.close();session.closeSession(); }

@@ -45,7 +45,7 @@
     if (busy || !endpoint) return;
     var thisSession = session; ui(true); clearArtifact();
     var approving = confirmationToken && /^(yes|confirm|proceed|generate|oui|correct)/i.test(history[history.length - 1].content.trim());
-    state(approving ? 'Building your v1' : 'Finding the right API', approving ? 'Writing Java and Go, then bundling both MIs…' : 'Checking the official documentation first…', 'working');
+    state(approving ? 'Building your v1' : 'Checking the fit', approving ? 'Writing Java and Go, then bundling both MIs…' : 'Checking Integration Hub, requirements and official API docs…', 'working');
     started = pendingJob && pendingJob.clientStarted || Date.now(); timer(); tick = setInterval(timer, 1000);
     controller = new AbortController(); var timeout = setTimeout(function () { if (controller) controller.abort(); }, 240000);
     try {
@@ -78,7 +78,7 @@
       if (data.status === 'awaiting_confirmation') {
         confirmationToken = data.confirmationToken || '';
         if (!confirmationToken) throw new Error('The service confirmation could not be prepared. Please retry.');
-        state('Confirm the service', 'Check the API and documentation, then choose Yes to generate.');
+        state('Confirm the fit and API', 'Review the custom scope and API, then choose Yes to build.');
         byId('details').textContent = 'Describe → confirm → download'; confirmService();
       }
       else if (data.project) {
@@ -94,7 +94,18 @@
         if(project.tests && /^[a-f0-9]{64}$/.test(project.tests.sha256||'') && project.tests.downloadUrl) byId('download-tests').disabled=false;
         else byId('download-tests').title='Start a new MI to generate its test kit.';
         byId('download-note').textContent = 'Choose Java MDK or Go, complete the shared YAML, and download the test kit for SDK Perf, samples and measured results.';
-      } else { confirmationToken = ''; state(data.status === 'flow_limit' ? 'Start a new MI' : 'One detail needed', data.status === 'flow_limit' ? 'Five turns reached. Choose New MI for a fresh draft.' : 'Reply in the chat to finish your v1.'); }
+      } else {
+        confirmationToken = '';
+        var decisions = {
+          reuse:['Use an existing integration','Open the recommended Hub entry. Describe any remaining custom gap here.'],
+          architecture_review:['Architecture review needed','Review the requirements and suggested approach before building.'],
+          clarify:['Check the fit first','Answer the question in the chat.'],
+          flow_limit:['Start a new MI','Five turns reached. Choose New MI for a fresh draft.']
+        };
+        var decision=decisions[data.status]||['One detail needed','Reply in the chat to finish your v1.'];
+        state(decision[0],decision[1]);
+        if(data.qualification)byId('details').textContent='Fit checked · generation paused';
+      }
     } catch (error) {
       if (thisSession !== session) return;
       clearArtifact(); state('Build interrupted', 'Your request is kept in this chat. Retry when you’re ready.');
@@ -165,7 +176,7 @@
   byId('download-go').addEventListener('click',function(){if(project)downloadArtifact(project.go);});
   byId('download-config').addEventListener('click',function(){if(project)downloadArtifact(project.configuration);});
   byId('download-tests').addEventListener('click',function(){if(project)downloadArtifact(project.tests);});
-  function welcome() { append('assistant', 'What should your MI do? I’ll find the official API docs, confirm the service with you, then build your first version.'); }
+  function welcome() { append('assistant', 'What should your MI do? I’ll check whether it already exists in Solace Integration Hub and whether a custom MI fits. If it does, we’ll confirm the API and build it.'); }
   async function connect() {
     ui(false); send.disabled = true;
     try {

@@ -1,8 +1,12 @@
 package com.solace.mi;
 
 import java.util.Map;
+import java.util.List;
 
 /** Successful return means the broker acknowledged this persistent output. */
 public interface OutputPublisher {
     void publish(byte[] payload, Map<String,Object> headers, String topic);
+    default void publishAll(byte[] payload, Map<String,Object> headers, List<String> topics) {
+        for (String topic : topics) publish(payload,headers,topic);
+    }
 }

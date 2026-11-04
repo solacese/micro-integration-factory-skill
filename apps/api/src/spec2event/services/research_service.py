@@ -160,6 +160,8 @@ def allowed_url(url: str) -> bool:
             return False
         if parsed.hostname in HOSTS:
             return True
+        if parsed.hostname in {"solace.com", "www.solace.com"}:
+            return bool(re.fullmatch(r"/integration-hub/(?:[a-z0-9-]+/)?", parsed.path))
         if parsed.hostname in {"github.com", "raw.githubusercontent.com"}:
             parts = parsed.path.strip("/").split("/")
             return bool(

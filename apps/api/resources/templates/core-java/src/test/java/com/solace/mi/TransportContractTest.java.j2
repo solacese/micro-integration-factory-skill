@@ -55,10 +55,8 @@ class TransportContractTest {
             return PAYLOAD;
         });
         Application.forward(core,bridge,PAYLOAD,Map.of("mi_output_topics","attacker/topic","scst_targetDestination","attacker/topic","deliveryAttempt",new java.util.concurrent.atomic.AtomicInteger(1),"solace_timeToLive",0L,"Authorization","private-test-value"));
-        var captor=org.mockito.ArgumentCaptor.forClass(String.class);
-        verify(bridge,times(2)).publish(eq(PAYLOAD),anyMap(),captor.capture());
-        assertEquals(List.of("stripe/events","stripe/customers/cus_1"),captor.getAllValues());
-        doThrow(new IllegalStateException("Broker rejected output")).when(bridge).publish(any(),anyMap(),any());
+        verify(bridge).publishAll(eq(PAYLOAD),anyMap(),eq(List.of("stripe/events","stripe/customers/cus_1")));
+        doThrow(new IllegalStateException("Broker rejected output")).when(bridge).publishAll(any(),anyMap(),anyList());
         assertThrows(IllegalStateException.class,()->Application.forward(core,bridge,PAYLOAD,Map.of()));
     }
 

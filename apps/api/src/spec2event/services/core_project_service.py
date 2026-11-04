@@ -25,7 +25,10 @@ DEPENDENCIES = {
 
 
 def create_core_project(
-    spec: dict, sources: list[dict] | None = None, service_plan: list[dict] | None = None
+    spec: dict,
+    sources: list[dict] | None = None,
+    service_plan: list[dict] | None = None,
+    qualification: dict | None = None,
 ) -> dict:
     spec = copy.deepcopy(spec)
     if not (TEMPLATES / "pom.xml.j2").is_file():
@@ -148,6 +151,11 @@ def create_core_project(
             "assumptions": spec.get("assumptions", []),
             "sources": evidence,
             "confirmedServicePlan": service_plan or [],
+            "suitabilityAssessment": qualification
+            or {
+                "decision": "not_assessed",
+                "source": "Direct CLI packaging; assess suitability before implementation",
+            },
         },
         indent=2,
     )

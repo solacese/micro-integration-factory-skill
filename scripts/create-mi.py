@@ -15,10 +15,16 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "apps/api/src"))
 from spec2event.services.core_project_service import create_core_project
 from spec2event.services.dual_project_service import create_dual_projects
+from spec2event.services.suitability_service import permits_build
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("spec", type=Path)
 parser.add_argument("--output", type=Path, required=True)
+parser.add_argument(
+    "--assessment",
+    type=Path,
+    help="Reviewed suitability JSON to record in both projects",
+)
 parser.add_argument(
     "--go-transport",
     choices=["smf", "amqp"],
@@ -39,7 +45,14 @@ args.output.mkdir(parents=True, exist_ok=True)
 spec = json.loads(args.spec.read_text())
 if args.go_transport:
     spec["go_transport"] = args.go_transport
-result = (create_dual_projects if args.both else create_core_project)(spec)
+assessment = json.loads(args.assessment.read_text()) if args.assessment else None
+if assessment is not None and not permits_build(assessment):
+    parser.error(
+        "The suitability assessment must approve a custom build; resolve reuse/design recommendations first"
+    )
+result = (create_dual_projects if args.both else create_core_project)(
+    spec, qualification=assessment
+)
 if args.validate:
     with tempfile.TemporaryDirectory(prefix="mi-factory-spec-") as temporary:
         source = Path(temporary) / "project.json"

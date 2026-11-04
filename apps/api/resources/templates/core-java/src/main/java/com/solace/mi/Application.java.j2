@@ -57,9 +57,9 @@ public class Application {
         headers.remove("scst_targetDestination");
         List<String> topics = outputTopics(routing);
         if (topics.isEmpty()) {
-            publish(bridge, result, headers, null);
+            bridge.publish(result, headers, null);
         } else {
-            for (String topic : topics) publish(bridge, result, headers, topic);
+            bridge.publishAll(result, headers, topics);
         }
         return String.valueOf(headers.get("mi_correlation_id"));
     }
@@ -76,10 +76,6 @@ public class Application {
             topics.add(topic);
         }
         return List.copyOf(topics);
-    }
-
-    private static void publish(OutputPublisher bridge, byte[] payload, Map<String,Object> headers, String topic) {
-        bridge.publish(payload,headers,topic);
     }
 
     static void verifyStripe(byte[] payload, String signature, String secret, long now) {

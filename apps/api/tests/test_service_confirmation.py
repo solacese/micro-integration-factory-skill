@@ -33,6 +33,25 @@ def research(monkeypatch):
             }
 
     monkeypatch.setattr(advisor_service, "ValidationService", UnitPackagingValidator)
+
+    class QualifiedFixture:
+        def __init__(self, provider):
+            pass
+
+        def assess(self, request):
+            return {
+                "version": 1,
+                "decision": "build",
+                "reason": "Fixture custom processing fits.",
+                "customGap": "Fixture business behavior",
+                "suggestedApproach": "",
+                "matches": [],
+                "concerns": [],
+                "sources": [],
+                "catalog": {"indexStatus": "fetched", "url": "https://solace.com/integration-hub/"},
+            }
+
+    monkeypatch.setattr(advisor_service, "SuitabilityService", QualifiedFixture)
     calls = []
     monkeypatch.setattr(advisor_service, "research", lambda *a, **kw: [evidence()])
 
@@ -297,6 +316,15 @@ def test_fifth_user_turn_can_confirm_and_finish_the_draft(research):
             json.loads(archive.read(metadata))["confirmedServicePlan"][0]["name"]
             == "Stripe Webhooks"
         )
+        assert json.loads(archive.read(metadata))["suitabilityAssessment"]["decision"] == "build"
+    with zipfile.ZipFile(
+        io.BytesIO(base64.b64decode(result["project"]["go"]["zipBase64"]))
+    ) as archive:
+        metadata = next(name for name in archive.namelist() if name.endswith("/generation.json"))
+        assert (
+            json.loads(archive.read(metadata))["suitabilityAssessment"]["customGap"]
+            == "Fixture business behavior"
+        )
 
 
 def test_discovery_cannot_call_the_generation_tool(research):
@@ -333,7 +361,14 @@ def test_vendor_source_verifies_salesforce_when_doc_pages_reject_server_requests
     assert "Verified vendor reference" in result["content"]
 
 
-@pytest.mark.parametrize('reply',['yes','Yes, build and test both','Yes, build and benchmark both'])
+@pytest.mark.parametrize(
+    "reply", ["yes", "Yes, build and test both", "Yes, build and benchmark both"]
+)
 def test_download_confirmation_action_is_an_affirmation(reply):
     assert service_confirmation.affirmative(reply)
-    assert service_confirmation.resolve_request([{'role':'user','content':REQUEST},{'role':'user','content':reply}])==REQUEST
+    assert (
+        service_confirmation.resolve_request(
+            [{"role": "user", "content": REQUEST}, {"role": "user", "content": reply}]
+        )
+        == REQUEST
+    )

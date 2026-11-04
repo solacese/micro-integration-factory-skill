@@ -63,11 +63,11 @@ def artifact(filename: str, data: bytes, **extra) -> dict:
     }
 
 
-def create_dual_projects(spec: dict, sources=None, service_plan=None) -> dict:
+def create_dual_projects(spec: dict, sources=None, service_plan=None, qualification=None) -> dict:
     # Import lazily: the Java packager also uses the shared config helper.
     from spec2event.services.core_project_service import create_core_project
 
-    java = create_core_project(spec, sources, service_plan)
+    java = create_core_project(spec, sources, service_plan, qualification)
     transport = spec.get("go_transport", "amqp")
     if transport not in {"amqp", "smf"}:
         raise ValueError("go_transport must be amqp or smf")

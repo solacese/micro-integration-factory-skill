@@ -101,6 +101,7 @@ def deploy(env_file: Path, region: str):
         "apps/api/resources/templates/core-java",
         "apps/api/resources/templates/core-go",
         "apps/api/resources/templates/test-kit",
+        "apps/api/resources/catalog",
         "infra/validation/loadtest",
         "infra/advisor",
     ]:
