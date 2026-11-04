@@ -9,6 +9,10 @@ export MI_HTTP_PORT="${MI_FACTORY_TEST_PORT:-18102}"
   "${ROOT}/apps/api/resources/samples/core-java/uppercase.json" --output "${MI_FACTORY_WORK}"
 cd "${MI_FACTORY_WORK}/uppercase-mi-v1"
 cleanup() {
+  local result=$?
+  if [[ "$result" -ne 0 ]]; then
+    docker compose -f compose.yaml -f compose.demo.yaml logs --no-color --tail=100 || true
+  fi
   docker compose -f compose.yaml -f compose.demo.yaml down --volumes >/dev/null 2>&1 || true
   rm -rf "${MI_FACTORY_WORK}"
 }
