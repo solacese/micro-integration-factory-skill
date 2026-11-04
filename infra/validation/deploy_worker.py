@@ -13,6 +13,9 @@ NAME = "mi-factory-validation"
 
 
 def provision(session):
+    from infra.validation.mirror_images import prepare
+
+    images, image_repository = prepare(session)
     account = session.client("sts").get_caller_identity()["Account"]
     region = session.region_name
     bucket = NAME + "-" + account + "-" + region
@@ -107,6 +110,20 @@ def provision(session):
         "Statement": [
             {
                 "Effect": "Allow",
+                "Action": ["ecr:GetAuthorizationToken"],
+                "Resource": "*",
+            },
+            {
+                "Effect": "Allow",
+                "Action": [
+                    "ecr:BatchGetImage",
+                    "ecr:GetDownloadUrlForLayer",
+                    "ecr:BatchCheckLayerAvailability",
+                ],
+                "Resource": image_repository,
+            },
+            {
+                "Effect": "Allow",
                 "Action": ["s3:GetObject"],
                 "Resource": [
                     f"arn:aws:s3:::{bucket}/worker/*",
@@ -184,6 +201,11 @@ def provision(session):
             "computeType": "BUILD_GENERAL1_LARGE",
             "privilegedMode": True,
             "environmentVariables": [
+                {
+                    "name": "VALIDATION_BASE_IMAGES",
+                    "value": json.dumps(images),
+                    "type": "PLAINTEXT",
+                },
                 {"name": "VALIDATION_BUCKET", "value": bucket, "type": "PLAINTEXT"},
                 {
                     "name": "VALIDATION_COMPUTE",

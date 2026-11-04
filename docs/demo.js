@@ -71,6 +71,7 @@
         if(data.performance) renderPerformance(data.performance);
         state('Validation did not pass', data.content || 'Downloads remain locked. Refine your request or retry.');
         append('assistant', data.content || 'Validation did not pass. Downloads remain locked.', true);
+        var rebuild=document.createElement('button');rebuild.className='quiet';rebuild.type='button';rebuild.textContent=history.length&&confirmationToken?'Rebuild and test':'Start a new MI';rebuild.onclick=function(){rebuild.remove();if(history.length&&confirmationToken)request();else byId('reset').click();};messages.appendChild(rebuild);
         return;
       }
       append('assistant', data.content || 'Please describe your expected input and output.'); history.push({ role: 'assistant', content: data.content || 'Please describe your expected input and output.' });

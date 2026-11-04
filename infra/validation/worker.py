@@ -174,6 +174,45 @@ def sandbox_network():
         run(["iptables", "-I", "DOCKER-USER", "1", "-j", "MI_FACTORY_SANDBOX"])
 
 
+def mirrored_dockerfile(directory):
+    images = json.loads(os.getenv("VALIDATION_BASE_IMAGES", "{}"))
+    if not images:
+        return
+    dockerfile = directory / "Dockerfile"
+    lines = []
+    for line in dockerfile.read_text().splitlines():
+        if line.startswith("FROM "):
+            prefix, source, *rest = line.split()
+            if source.lower() != "scratch":
+                if source not in images:
+                    raise ValueError("Unapproved validation base image")
+                line = " ".join([prefix, images[source], *rest])
+        lines.append(line)
+    dockerfile.write_text("\n".join(lines) + "\n")
+
+
+def login_mirror():
+    images = json.loads(os.getenv("VALIDATION_BASE_IMAGES", "{}"))
+    if not images:
+        return
+    import boto3
+
+    ecr = boto3.client("ecr")
+    auth = ecr.get_authorization_token()["authorizationData"][0]
+    username, password = (
+        base64.b64decode(auth["authorizationToken"]).decode().split(":", 1)
+    )
+    registry = next(iter(images.values())).split("/")[0]
+    result = subprocess.run(
+        ["docker", "login", "--username", username, "--password-stdin", registry],
+        input=password,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode:
+        raise RuntimeError("Private worker image authentication failed")
+
+
 def validate(project: dict, work: Path, progress=lambda *a: None):
     os.environ["MI_HTTP_PORT"] = "18190"
     report = {
@@ -186,6 +225,12 @@ def validate(project: dict, work: Path, progress=lambda *a: None):
             "architecture": os.uname().machine,
             "cpuCount": os.cpu_count(),
             "compute": os.getenv("VALIDATION_COMPUTE", "local Docker host"),
+            "baseImageDigests": {
+                source: target.rsplit("@", 1)[1]
+                for source, target in json.loads(
+                    os.getenv("VALIDATION_BASE_IMAGES", "{}")
+                ).items()
+            },
             "runtimeCpuLimit": 2,
             "brokerCpuLimit": 4,
             "generatorCpuLimit": 2,
@@ -194,6 +239,7 @@ def validate(project: dict, work: Path, progress=lambda *a: None):
     }
     progress("preparing", "Preparing isolated runtime validation")
     harness = "mi-factory-loadtest:validated"
+    mirrored_dockerfile(ROOT / "loadtest")
     run(["docker", "build", "-t", harness, str(ROOT / "loadtest")], timeout=600)
     shared = configuration(project)
     artifacts = {}
@@ -204,6 +250,7 @@ def validate(project: dict, work: Path, progress=lambda *a: None):
         directory = work / language
         directory.mkdir(parents=True)
         app = unpack(original, directory)
+        mirrored_dockerfile(app)
         (app / ".env").write_text("MI_RUN_UID=65532\nMI_RUN_GID=65532\n")
         config_file = app / "config/mi-demo.yaml"
         config_file.write_text(json.dumps(shared, indent=2))
@@ -217,6 +264,11 @@ def validate(project: dict, work: Path, progress=lambda *a: None):
                 "default": {"ipam": {"config": [{"subnet": "172.28.42.0/24"}]}}
             },
         }
+        images = json.loads(os.getenv("VALIDATION_BASE_IMAGES", "{}"))
+        if images:
+            override["services"]["broker"]["image"] = images[
+                "solace/solace-pubsub-standard:latest"
+            ]
         (app / "compose.validation.json").write_text(json.dumps(override))
         compose = [
             "docker",
@@ -480,6 +532,7 @@ def main():
             ContentType="application/json",
         )
 
+    login_mirror()
     sandbox_network()
     try:
         report, artifacts = validate(request["project"], work, progress)

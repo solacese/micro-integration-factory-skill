@@ -71,6 +71,8 @@ PYTHONPATH=apps/api/src apps/api/.venv/bin/python infra/advisor/deploy.py \
   --ai-core-env /private/path/ai-core.env
 ```
 
+Deployment requires the AWS CLI and crane (`brew install crane`). The deployer uses its existing Docker login to copy verified Linux/amd64 upstream image digests into a private ECR mirror. Workers pull from that mirror to avoid shared Docker Hub limits; images and registry credentials are not included in downloads.
+
 The script provisions the Lambda advisor, private validation bucket and bounded CodeBuild worker, updates IAM for those resources, and writes docs/demo-config.json. GitHub Pages publishes docs/ when main is pushed. The worker is limited to one concurrent job, fifteen minutes per build and twenty submitted jobs per day. Build/benchmark time is additional to AI generation.
 
 For local API development, export the [server credential fields](infra/advisor/.env.example), VALIDATION_BUCKET and VALIDATION_PROJECT, then run `PYTHONPATH=src uv run uvicorn spec2event.advisor_app:app --host 127.0.0.1 --port 8087` in apps/api. Point docs/demo-config.json at it and serve docs/ on port 8086; restore the deployed URL before publishing. An unconfigured worker fails closed.
