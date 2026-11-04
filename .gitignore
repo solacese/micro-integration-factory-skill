@@ -51,3 +51,7 @@ apps/api/generated-runs/*
 *.tfstate*
 .terraform/
 **/.claude/settings.local.json
+
+# Local verification and deployment bundles
+.runtime/
+!**/.env.example.j2

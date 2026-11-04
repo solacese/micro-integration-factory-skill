@@ -1,0 +1,56 @@
+package com.solace.mi;
+
+import java.util.*;
+import java.util.concurrent.*;
+import com.solacesystems.jcsmp.*;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import tools.jackson.databind.json.JsonMapper;
+import static org.junit.jupiter.api.Assertions.*;
+
+@EnabledIfEnvironmentVariable(named="MI_SMOKE_BROKER", matches=".+")
+class BrokerRoundTripIT {
+    @Test void inputTraversesRunningMiAndReturnsOnOutputTopic() throws Exception {
+        var examples=JsonMapper.builder().build().readTree(getClass().getResourceAsStream("/core-examples.json"));
+        var example=examples.valueStream().filter(e -> e.has("output_base64")).findFirst().orElseThrow();
+        var p=new JCSMPProperties();
+        p.setProperty(JCSMPProperties.HOST,System.getenv("MI_SMOKE_BROKER"));
+        p.setProperty(JCSMPProperties.VPN_NAME,System.getenv().getOrDefault("SOLACE_VPN","default"));
+        p.setProperty(JCSMPProperties.USERNAME,System.getenv().getOrDefault("SOLACE_USERNAME","default"));
+        p.setProperty(JCSMPProperties.PASSWORD,System.getenv().getOrDefault("SOLACE_PASSWORD","default"));
+        var session=JCSMPFactory.onlyInstance().createSession(p);
+        var received=new ArrayBlockingQueue<byte[]>(1);
+        String trace=UUID.randomUUID().toString();
+        try {
+            session.connect();
+            var consumer=session.getMessageConsumer(new XMLMessageListener() {
+                public void onReceive(BytesXMLMessage m) {
+                    try {
+                        if(m.getProperties()!=null && trace.equals(m.getProperties().getString("mi_correlation_id"))) {
+                            if(m instanceof TextMessage t) received.offer(t.getText().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                            else if(m.hasAttachment()) { var b=m.getAttachmentByteBuffer(); byte[] bytes=new byte[b.remaining()]; b.get(bytes); received.offer(bytes); }
+                            else received.offer(m.getBytes());
+                        }
+                    } catch(Exception error) { throw new RuntimeException(error); }
+                }
+                public void onException(JCSMPException error) { throw new RuntimeException(error); }
+            });
+            session.addSubscription(JCSMPFactory.onlyInstance().createTopic(System.getenv().getOrDefault("SOLACE_OUTPUT_TOPIC","mi/{{ name }}/out")),true);
+            consumer.start();
+            var producer=session.getMessageProducer(new JCSMPStreamingPublishEventHandler() {
+                public void responseReceived(String id) {}
+                public void handleError(String id,JCSMPException error,long timestamp) { throw new RuntimeException(error); }
+            });
+            var message=JCSMPFactory.onlyInstance().createMessage(BytesMessage.class);
+            message.writeBytes(Base64.getDecoder().decode(example.get("input_base64").asText()));
+            message.setDeliveryMode(DeliveryMode.PERSISTENT);
+            var headers=JCSMPFactory.onlyInstance().createMap(); headers.putString("mi_correlation_id",trace);
+            if(example.has("headers")) for(var e:example.get("headers").properties()) headers.putString(e.getKey(),e.getValue().asText());
+            message.setProperties(headers);
+            producer.send(message,JCSMPFactory.onlyInstance().createTopic(System.getenv().getOrDefault("SOLACE_INPUT_TOPIC","mi/{{ name }}/in")));
+            byte[] result=received.poll(30,TimeUnit.SECONDS);
+            assertNotNull(result,"No correlated result from the running MI within 30 seconds");
+            assertArrayEquals(Base64.getDecoder().decode(example.get("output_base64").asText()),result);
+        } finally { session.closeSession(); }
+    }
+}

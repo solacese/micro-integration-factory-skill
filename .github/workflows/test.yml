@@ -74,3 +74,9 @@ jobs:
           name: coverage-report
           path: apps/api/coverage.xml
           retention-days: 7
+
+      - name: Check the minimal website
+        run: node --check docs/demo.js
+
+      - name: Verify a generated MI through a fresh local broker
+        run: ./scripts/smoke-v1.sh

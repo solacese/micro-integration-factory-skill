@@ -1,0 +1,34 @@
+# {{ name }} MI v1
+
+{{ description }}
+
+The business logic is in **src/main/java/com/solace/mi/Core.java**. Application.java is the standard transport. The project uses the Solace MDK 4.3.11 dependency platform with Spring Cloud Stream and Java 17; it does not load the stock connector workflow engine.
+
+## Start a local demo
+
+Install Docker with Compose, unzip this directory, then run:
+
+```bash
+./scripts/install.sh --demo
+./scripts/smoke.sh --demo
+```
+
+Docker builds and runs the MI and a local broker; host Java and Maven are optional. The smoke test publishes a uniquely correlated input message and checks the exact output bytes from the running MI. Inspect health at http://localhost:18080/actuator/health and logs with `docker compose logs integration`.
+
+To stop the demo: `docker compose -f compose.yaml -f compose.demo.yaml down`. Demo broker credentials are default/default and management is admin/admin; the demo broker is not exposed on host ports.
+
+## Connect an existing broker
+
+Run `./scripts/install.sh` once to create `.env`. Set the SMF endpoint, VPN, credentials, and topics there, then run it again. Input clients need permission to create/bind the durable queue and its error queue. Use a TLS endpoint and trusted certificates for remote services. Keep input and output topics separate. Run `./scripts/smoke.sh` to verify the configured broker.
+
+Messages arrive through the input topic or HTTP POST /ingest. Core.java receives raw bytes plus a mutable map of message properties and returns output bytes; IllegalArgumentException rejects input. An HTTP 202 means the binder accepted publication, so use the smoke test to verify delivery. This v1 does not establish exactly-once delivery or a production throughput limit.
+
+## Change the core
+
+```bash
+./scripts/verify.sh
+./scripts/install.sh --demo
+./scripts/smoke.sh --demo
+```
+
+Verification uses the supplied contract examples. Compilation, contract tests, and broker tests have separate results: generation.json starts with all three as not_run until you run them. Assumptions and fetched source URLs are recorded there. No credentials are included in the download.

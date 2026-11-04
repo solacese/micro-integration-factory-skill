@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+command -v claude >/dev/null || { echo 'Install Claude Code, then run ./mi again.' >&2; exit 1; }
+exec claude "/build-mi $*"

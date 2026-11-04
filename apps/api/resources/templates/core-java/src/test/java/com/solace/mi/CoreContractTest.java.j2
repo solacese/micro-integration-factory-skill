@@ -1,0 +1,23 @@
+package com.solace.mi;
+
+import java.util.*;
+import org.junit.jupiter.api.Test;
+import tools.jackson.databind.json.JsonMapper;
+import static org.junit.jupiter.api.Assertions.*;
+
+class CoreContractTest {
+    @Test void suppliedExamplesMeetTheContract() throws Exception {
+        var examples=JsonMapper.builder().build().readTree(getClass().getResourceAsStream("/core-examples.json"));
+        for (var example : examples) {
+            byte[] input=Base64.getDecoder().decode(example.get("input_base64").asText());
+            Map<String,Object> headers=new HashMap<>();
+            if (example.has("headers")) example.get("headers").properties().forEach(e -> headers.put(e.getKey(), e.getValue().asText()));
+            if (example.path("expected_error").asBoolean(false)) {
+                assertThrows(Exception.class, () -> new Core().process(input, headers));
+            } else {
+                byte[] expected=Base64.getDecoder().decode(example.get("output_base64").asText());
+                assertArrayEquals(expected, new Core().process(input, headers), "Core.java did not match a supplied contract example");
+            }
+        }
+    }
+}

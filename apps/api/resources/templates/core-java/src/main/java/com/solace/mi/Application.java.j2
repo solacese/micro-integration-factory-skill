@@ -1,0 +1,66 @@
+package com.solace.mi;
+
+import java.util.*;
+import java.util.function.Consumer;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.cloud.stream.function.StreamBridge;
+import org.springframework.context.annotation.Bean;
+import org.springframework.http.ResponseEntity;
+import org.springframework.messaging.Message;
+import org.springframework.messaging.support.MessageBuilder;
+import org.springframework.web.bind.annotation.*;
+
+/** Standard transport. Put business logic only in Core.java. */
+@SpringBootApplication
+public class Application {
+    public static void main(String[] args) { SpringApplication.run(Application.class, args); }
+
+    @Bean Core core() { return new Core(); }
+
+    @Bean Consumer<Message<byte[]>> process(Core core, StreamBridge bridge) {
+        return message -> forward(core, bridge, message.getPayload(), message.getHeaders());
+    }
+
+    static String forward(Core core, StreamBridge bridge, byte[] payload, Map<String, ?> incoming) {
+        if (payload.length > 1_048_576) throw new IllegalArgumentException("Payload exceeds 1 MiB");
+        Map<String,Object> headers = new HashMap<>();
+        incoming.forEach((key, value) -> {
+            if (!Set.of("id", "timestamp").contains(key) &&
+                (value instanceof String || value instanceof Number || value instanceof Boolean || value instanceof byte[]))
+                headers.put(key, value);
+        });
+        headers.putIfAbsent("mi_correlation_id", UUID.randomUUID().toString());
+        final byte[] result;
+        try { result = core.process(payload, headers); }
+        catch (IllegalArgumentException rejected) { throw rejected; }
+        catch (Exception error) { throw new IllegalStateException("Core processing failed", error); }
+        if (result == null) throw new IllegalStateException("Core.java returned no result");
+        if (!bridge.send("output-out-0", MessageBuilder.withPayload(result).copyHeaders(headers).build()))
+            throw new IllegalStateException("Output publisher did not accept the message");
+        return String.valueOf(headers.get("mi_correlation_id"));
+    }
+
+    @RestController
+    static class Ingress {
+        private final Core core;
+        private final StreamBridge bridge;
+        Ingress(Core core, StreamBridge bridge) { this.core = core; this.bridge = bridge; }
+
+        @PostMapping("/ingest")
+        ResponseEntity<Map<String,String>> ingest(@RequestBody byte[] payload, @RequestHeader Map<String,String> headers) {
+            return ResponseEntity.accepted().body(Map.of("status", "accepted",
+                "correlationId", forward(core, bridge, payload, headers)));
+        }
+
+        @ExceptionHandler(IllegalArgumentException.class)
+        ResponseEntity<Map<String,String>> rejected() {
+            return ResponseEntity.unprocessableEntity().body(Map.of("status", "rejected", "reason", "Payload rejected by Core.java"));
+        }
+
+        @ExceptionHandler(IllegalStateException.class)
+        ResponseEntity<Map<String,String>> failed() {
+            return ResponseEntity.status(503).body(Map.of("status", "processing_failed"));
+        }
+    }
+}

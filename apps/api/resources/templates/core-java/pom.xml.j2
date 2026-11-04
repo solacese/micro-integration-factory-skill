@@ -1,0 +1,17 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <parent><groupId>com.solace.microintegration.core</groupId><artifactId>micro-integration-build-parent</artifactId><version>4.3.11</version><relativePath/></parent>
+  <groupId>com.solace.mi</groupId><artifactId>{{ name }}</artifactId><version>1.0.0</version>
+  <description>{{ description|e }}</description>
+  <properties><java.version>17</java.version><project.build.sourceEncoding>UTF-8</project.build.sourceEncoding></properties>
+  <dependencies>
+    <dependency><groupId>com.solace.spring.cloud</groupId><artifactId>spring-cloud-starter-stream-solace</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-web</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-actuator</artifactId></dependency>
+    <dependency><groupId>org.springframework.boot</groupId><artifactId>spring-boot-starter-test</artifactId><scope>test</scope></dependency>
+{% for group, artifact, version in dependencies %}
+    <dependency><groupId>{{ group }}</groupId><artifactId>{{ artifact }}</artifactId><version>{{ version }}</version></dependency>
+{% endfor %}
+  </dependencies>
+  <build><finalName>mi</finalName><plugins><plugin><groupId>org.springframework.boot</groupId><artifactId>spring-boot-maven-plugin</artifactId></plugin></plugins></build>
+</project>

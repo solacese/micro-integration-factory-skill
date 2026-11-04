@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+command -v docker >/dev/null
+docker info >/dev/null
+docker compose version >/dev/null
+if [[ ! -f .env ]]; then
+  cp .env.example .env
+  if [[ "${1:-}" != --demo ]]; then
+    echo 'Created .env. Set your broker connection and credentials, then run this command again.'
+    exit 0
+  fi
+fi
+case "${1:-}" in
+  --demo)
+    docker compose -f compose.yaml -f compose.demo.yaml up -d --wait broker
+    docker compose -f compose.yaml -f compose.demo.yaml exec -T broker curl -fsS -u admin:admin \
+      -X PATCH http://localhost:8080/SEMP/v2/config/msgVpns/default/clientProfiles/default \
+      -H 'Content-Type: application/json' \
+      -d '{"allowGuaranteedMsgSendEnabled":true,"allowGuaranteedMsgReceiveEnabled":true,"allowGuaranteedEndpointCreateEnabled":true}' >/dev/null
+    docker compose -f compose.yaml -f compose.demo.yaml up -d --build --wait integration
+    echo 'MI ready. Prove its broker round trip with: ./scripts/smoke.sh --demo'
+    ;;
+  "") docker compose up -d --build --wait integration ;;
+  *) echo 'Usage: ./scripts/install.sh [--demo]' >&2; exit 2 ;;
+esac

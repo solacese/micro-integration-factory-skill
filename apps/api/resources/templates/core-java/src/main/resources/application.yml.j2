@@ -1,0 +1,41 @@
+server:
+  port: 8080
+spring:
+  application:
+    name: {{ name }}
+  cloud:
+    function:
+      definition: process
+    stream:
+      default-binder: solace
+      output-bindings: output-out-0
+      bindings:
+        process-in-0:
+          destination: ${SOLACE_INPUT_TOPIC:mi/{{ name }}/in}
+          group: ${SOLACE_QUEUE_GROUP:{{ name }}}
+          consumer:
+            use-native-decoding: true
+            max-attempts: 3
+        output-out-0:
+          destination: ${SOLACE_OUTPUT_TOPIC:mi/{{ name }}/out}
+          producer:
+            use-native-encoding: true
+            error-channel-enabled: true
+      solace:
+        bindings:
+          process-in-0:
+            consumer:
+              provision-durable-queue: true
+              add-destination-as-subscription-to-queue: true
+              auto-bind-error-queue: true
+solace:
+  java:
+    host: ${SOLACE_BROKER_URL:tcp://localhost:55555}
+    msgVpn: ${SOLACE_VPN:default}
+    clientUsername: ${SOLACE_USERNAME:default}
+    clientPassword: ${SOLACE_PASSWORD:default}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

@@ -1,208 +1,78 @@
-# Agentic Integration Factory
+# MI Factory
 
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tests](https://github.com/solacese/agentic-integration-factory/actions/workflows/test.yml/badge.svg)](https://github.com/solacese/agentic-integration-factory/actions/workflows/test.yml)
-[![Python](https://img.shields.io/badge/python-3.13-blue.svg)](https://www.python.org/downloads/)
-[![Code style: ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+Describe the behavior, build **Core.java**, and download **MI v1**.
 
-Open-source starter repo for an agent-driven micro-integration factory:
+[Open the factory](https://solacese.github.io/micro-integration-factory-skill/demo.html)
 
-`discover -> design -> generate -> validate -> deploy -> govern`
+The dark, minimal website has chat on the left, build status on the right, and one download button. The advisor researches primary documentation and uses SAP AI Core to write the core Java business logic. A deterministic packager adds the standard runtime rather than asking the model to invent a framework.
 
-It turns **any source** — OpenAPI specs, JSON Schemas, database credentials, or custom inputs — into a production-ready **Solace MDK micro-integration** with canonical event models, workflow routing, and Event Portal governance.
+## Use Claude Code
 
-## Key Capabilities
-
-- **Source-agnostic ingestion** — pluggable source adapters handle parsing, summarization, and canonicalization for each input type
-- **Real Solace MDK output** — generated projects use the `micro-integration-build-parent`, pre-created bindings, workflow routing, and `BindingCapabilitiesFactory` beans (based on Solace MDK Samples)
-- **Multiple ingress patterns** — REST controllers, polling consumers, or event subscribers depending on the source type
-- **Full lifecycle** — generation, build, deploy, test, Event Portal sync, and AI refinement in one pipeline
-- **Agent-native** — comes with a skill definition and lifecycle runbook for autonomous operation
-
-## Connector Matrix
-
-| Connector | Direction | Input Format | Ingress Pattern | Streaming |
-|-----------|-----------|-------------|-----------------|-----------|
-| **OpenAPI** | Source | YAML/JSON spec | REST controller | - |
-| **JSON Schema** | Source | `.schema.json` file | REST controller (CRUD) | - |
-| **Database (CDC)** | Source | Connection spec JSON | Event subscriber | Yes (log-based CDC) |
-| **Kafka** | Source | Broker spec JSON | Event subscriber | Yes (partitioned) |
-| **Webhook** | Source | Endpoint spec JSON | REST controller | - |
-| **REST Sink** | Target | Canonical model | Solace consumer | - |
-| **Generic Target** | Target | Canonical model | Solace consumer | - |
-| **Integration Spec** | Both | Declarative JSON | Auto-detected | Configurable |
-
-### Transform Engines
-
-| Engine | Description | Artifacts Generated |
-|--------|-------------|-------------------|
-| **Passthrough** | No transformation (default) | `PassthroughTransform.java` |
-| **Field Mapping** | Declarative rename/select/flatten | `FieldMappingTransform.java` |
-| **JOLT** | JSON-to-JSON transformation | `JoltTransform.java` + `jolt-spec.json` |
-| **DataWeave** | MuleSoft DataWeave language | `DataWeaveTransform.java` + `transform.dwl` |
-| **Scripting** | JavaScript/Groovy/SpEL | `ScriptTransform.java` + `transform-script.js` |
-| **Custom Java** | User-implemented Function bean | `CustomTransform.java` |
-
-### Adding a New Connector or Transform
+With Claude Code already connected to your AI Core provider:
 
 ```bash
-# Scaffold a new connector
-make new-connector NAME=mqtt DIRECTION=source
-
-# Scaffold a new transform engine
-make new-transform NAME=xml_to_json
+./mi "Build an MI that uppercases the name field in JSON and rejects a missing name"
 ```
 
-Adding a new source type requires implementing three methods (`parse`, `summarize`, `canonicalize`) in a `SourceAdapter` subclass. Adding a renderer or transform requires no edits to the generator or pipeline; they are registry-driven.
-
-## Start Here
-
-1. Pick a demo mode:
+Or install the personal shortcut once:
 
 ```bash
-./infra/scripts/use_demo_env.sh openapi
-./infra/scripts/use_demo_env.sh postgres
-./infra/scripts/use_demo_env.sh hybrid
+python3 scripts/install-claude-skill.py
+mi-factory "Build my integration"
 ```
 
-2. Bootstrap the repo:
+The installer adds `/build-mi` and the `mi-factory` launcher. It preserves existing provider, authentication, and permission settings. [The workflow](docs/agent/core-java-workflow.md) tells Claude to research real APIs, package the core, run contract checks, and verify an actual broker round trip when a runtime test is requested.
+
+## What the download contains
+
+- **Core.java** — the one editable business-logic file.
+- A fixed Java 17 runtime using the Solace MDK 4.3.11 dependency platform, Spring Boot 4, Jackson 3, and Spring Cloud Stream.
+- Solace topic ingress/egress, HTTP `/ingest`, correlation IDs, failure propagation, health, and a separate error queue.
+- Docker installation, executable input/output contract examples, and a real broker smoke test.
+- `generation.json` with assumptions, fetched source provenance, and separate verification states.
+
+After unzipping, run:
 
 ```bash
-make bootstrap
+./scripts/install.sh --demo
+./scripts/smoke.sh --demo
 ```
 
-3. Validate the active env:
+Docker and Compose are sufficient; host Java and Maven are optional. For an existing broker, run `install.sh` once, edit the generated `.env`, and run it again. The generated README includes host/container addressing and stopping instructions.
+
+The smoke test publishes a unique input message, receives the correlated result on the output topic, and compares the bytes with the contract. A generated zip is **not** reported as compiled, deployed, or tested until those checks run. Native source triggers such as database CDC need a real upstream connector; the advisor must not silently replace them with a stub or payload processor.
+
+## Run or deploy the advisor
+
+The current advisor is independent of the historical PostgreSQL/Redis control plane. Supply SAP AI Core credentials only through the server environment or AWS Secrets Manager. The browser receives no credentials.
 
 ```bash
-make preflight
+cd apps/api
+uv sync
+# Export SAP_CLIENT_ID, SAP_CLIENT_SECRET, SAP_AUTH_URL, SAP_API_BASE_URL,
+# SAP_RESOURCE_GROUP, AI_CORE_DEPLOYMENT_ID, and AI_CORE_MODEL server-side.
+PYTHONPATH=src uv run uvicorn spec2event.advisor_app:app --host 127.0.0.1 --port 8087
 ```
 
-4. Start the local factory:
+Set `docs/demo-config.json` to that API's base URL when previewing locally, then serve `docs/` on port 8086. Restore the deployed URL before publishing.
+
+To deploy the small Lambda advisor using a private env file:
 
 ```bash
-npm run dev
+PYTHONPATH=apps/api/src apps/api/.venv/bin/python infra/advisor/deploy.py \
+  --ai-core-env /private/path/ai-core.env
 ```
 
-5. Or launch the public EC2 control plane:
+See [the credential field names](infra/advisor/.env.example). The script packages the backend and runtime templates, stores credentials in Secrets Manager, configures bounded public usage, and writes the endpoint into `docs/demo-config.json`. GitHub Pages publishes `docs/` on a push to `main`.
+
+## Verify changes
 
 ```bash
-make demo-ec2-up
+cd apps/api
+uv sync --group dev
+PYTHONPATH=src uv run pytest -q
 ```
 
-## What Gets Generated
+Use Java 17+ and Maven to enable the generated-project compilation tests. The new tests exercise project packaging, contract execution, AI Core OAuth refresh and tool-call continuity, source provenance, blocked redirects, soft 404s, and truthful build states. Live AI and broker checks are separate from mocked provider tests.
 
-Every run produces a complete Solace MDK micro-integration project:
-
-```
-workspace/
-├── pom.xml                          # MDK build parent (3.0.6)
-├── Dockerfile                       # Multi-stage build with external config support
-├── config/application-runtime.yml   # Workflow → destination mappings
-├── src/main/resources/
-│   └── application.yml              # MDK internal config (20 bindings, workflows, Solace defaults)
-├── src/main/java/.../
-│   ├── MicroIntegrationApplication.java           # Spring Boot + MDK bean declarations
-│   ├── binding/
-│   │   ├── SourceConsumerBindingCapabilitiesFactory.java  # Consumer ack mode
-│   │   └── SourceProducerBindingCapabilitiesFactory.java  # Producer ack mode
-│   ├── api/
-│   │   └── GeneratedApiController.java            # REST ingress (when applicable)
-│   └── service/
-│       ├── CanonicalEventService.java             # Operation → event mapping
-│       └── SolacePublisherService.java            # Solace StreamBridge publishing
-├── helm/                            # Kubernetes Helm chart
-└── scripts/demo-curls.sh            # Test fixtures
-```
-
-## Demo Bundles
-
-All prepared demo inputs live in [infra/demo](infra/demo):
-
-- OpenAPI demo env: [infra/demo/env/openapi.env](infra/demo/env/openapi.env)
-- PostgreSQL demo env: [infra/demo/env/postgres.env](infra/demo/env/postgres.env)
-- Hybrid demo env: [infra/demo/env/hybrid.env](infra/demo/env/hybrid.env)
-- OpenAPI prompt: [infra/demo/prompts/openapi_ec2_event_portal.md](infra/demo/prompts/openapi_ec2_event_portal.md)
-- PostgreSQL prompt: [infra/demo/prompts/postgres_ec2_event_portal.md](infra/demo/prompts/postgres_ec2_event_portal.md)
-- Hybrid prompt: [infra/demo/prompts/openapi_postgres_ec2_event_portal.md](infra/demo/prompts/openapi_postgres_ec2_event_portal.md)
-
-The helper script copies one of those env bundles into the active root `.env`.
-
-## Sample Inputs
-
-- [petstore.yaml](apps/api/resources/samples/openapi/petstore.yaml) - simple Petstore API
-- [stripe-webhook-demo.yaml](apps/api/resources/samples/openapi/stripe-webhook-demo.yaml) - Stripe webhook integration
-- [order.schema.json](apps/api/resources/samples/json_schema/order.schema.json) - e-commerce order schema
-- [orders-cdc.json](apps/api/resources/samples/database/orders-cdc.json) - PostgreSQL CDC source
-- [order-events.json](apps/api/resources/samples/kafka/order-events.json) - Kafka streaming source
-- [payment-webhooks.json](apps/api/resources/samples/webhook/payment-webhooks.json) - generic webhook source
-- [kafka-to-rest.json](apps/api/resources/samples/integration_spec/kafka-to-rest.json) - declarative integration spec (bidirectional)
-
-## Main Folders
-
-- [SKILL.md](docs/agent/SKILL.md)
-  — agent entry point
-- [create_micro_integrations.md](docs/agent/create_micro_integrations.md)
-  — lifecycle runbook
-- [docs/agent/references](docs/agent/references)
-  — deeper design and Event Portal guidance
-- [apps/api](apps/api)
-  — FastAPI orchestrator, source adapters, and deployment adapters
-- [apps/web](apps/web)
-  — Next.js UI with source type selector
-- [apps/api/resources/templates](apps/api/resources/templates)
-  — Solace MDK and Helm generation templates
-- [apps/api/resources/mdk-reference](apps/api/resources/mdk-reference)
-  — local MDK baseline (from Solace MDK Samples)
-- [apps/api/resources/samples](apps/api/resources/samples)
-  — bundled source inputs (OpenAPI, JSON Schema)
-
-## Architecture
-
-```
-Source Input (OpenAPI, JSON Schema, DB, MQTT, ...)
-  │
-  ▼
-Source Adapter  ─── parse() → summarize() → canonicalize()
-  │
-  ▼
-Canonical Event Model  (operations, topics, schemas, test fixtures)
-  │
-  ▼
-Generator Service  ─── Jinja2 templates → Solace MDK project
-  │                     (workflows, bindings, capabilities factories)
-  ▼
-Build Pipeline  ─── Docker build (local or ECR)
-  │
-  ▼
-Deploy Pipeline  ─── Docker / EC2 / Kubernetes
-  │
-  ▼
-Event Portal Sync  ─── domains, apps, schemas, events
-```
-
-## Minimal Agent Prompt
-
-```text
-Use this repository as your skill and execution guide.
-
-Read docs/agent/SKILL.md first, then docs/agent/create_micro_integrations.md.
-Use the active .env file in the repo as the configuration contract.
-Prefer the bundled implementation in apps/ and infra/ instead of rebuilding the control plane from scratch.
-
-Take over the micro-integration lifecycle:
-- discover the source
-- design the canonical events
-- generate or adapt the micro-integration
-- validate and test it
-- deploy it
-- register and link it in Solace Event Portal
-- write the operator and consumer notes
-
-The run is only complete when runtime, governance, and documentation are all in place.
-```
-
-## Notes
-
-- Use [.env.example](.env.example) as the base config template.
-- Use [petstore.yaml](apps/api/resources/samples/openapi/petstore.yaml) for the simplest API-first demo.
-- Use [order.schema.json](apps/api/resources/samples/json_schema/order.schema.json) for a schema-first demo.
+The old full control-plane UI and templates remain in `apps/web`, `apps/api`, and `archive/` for historical use; they are not the public v1 experience. The prior EC2 deployment remains retired. The current public advisor is a separate small deployment.

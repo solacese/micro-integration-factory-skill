@@ -1,0 +1,15 @@
+{
+  "name": "uppercase",
+  "description": "Uppercase UTF-8 input with the standard MI runtime.",
+  "core_java": "package com.solace.mi;\nimport java.util.Map;\nimport java.nio.charset.StandardCharsets;\npublic final class Core {\n public byte[] process(byte[] payload, Map<String,Object> headers) {\n   String text=new String(payload,StandardCharsets.UTF_8);\n   if(text.isBlank()) throw new IllegalArgumentException(\"Empty input\");\n   return text.toUpperCase(java.util.Locale.ROOT).getBytes(StandardCharsets.UTF_8);\n }\n}\n",
+  "examples": [
+    {
+      "input": "hello",
+      "output": "HELLO"
+    },
+    {
+      "input": "",
+      "expected_error": true
+    }
+  ]
+}

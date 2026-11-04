@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if command -v mvn >/dev/null && [[ -n "${JAVA_HOME:-}" ]]; then
+  mvn -B verify
+else
+  docker run --rm -v "$PWD:/workspace" -w /workspace \
+    maven:3.9.15-eclipse-temurin-17 mvn -B verify
+fi
+echo 'Compilation and unit tests passed. Verify an actual broker round trip before release.'

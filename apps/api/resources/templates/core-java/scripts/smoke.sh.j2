@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+case "${1:-}" in
+  --demo) docker compose -f compose.yaml -f compose.demo.yaml run --rm --no-deps smoke ;;
+  "") docker compose run --rm --no-deps smoke ;;
+  *) echo 'Usage: ./scripts/smoke.sh [--demo]' >&2; exit 2 ;;
+esac
