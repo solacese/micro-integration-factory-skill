@@ -518,21 +518,30 @@ def describe_fit(assessment: dict) -> str:
         parts.append("Custom scope: " + assessment["customGap"])
     if assessment["suggestedApproach"]:
         parts.append(assessment["suggestedApproach"])
-    for match in assessment["matches"]:
+    displayed_matches = (
+        [m for m in assessment["matches"] if m["fit"] == "covers_request"]
+        if assessment["decision"] == "reuse"
+        else assessment["matches"][:1]
+    )
+    for match in displayed_matches:
         parts.append(
             match["name"]
             + " — "
             + match["explanation"]
             + "\n"
             + match["url"]
-            + "\n"
-            + match["assetType"]
-            + " · "
-            + "/".join(match["directions"])
-            + " · "
-            + match["deployment"]
-            + " · "
-            + match["support"]
+            + (
+                "\n"
+                + match["assetType"]
+                + " · "
+                + "/".join(match["directions"])
+                + " · "
+                + match["deployment"]
+                + " · "
+                + match["support"]
+                if assessment["decision"] in {"reuse", "clarify"}
+                else ""
+            )
         )
     parts.extend(assessment["concerns"])
     catalog = assessment["catalog"]

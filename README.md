@@ -18,6 +18,8 @@ Hard latency SLOs, input rates above the factory's tested 1,000/s profile, paylo
 
 The complete Hub snapshot contains all **111 unique listings and their detail pages**, downloaded on 2026-11-04 across ten pages, with source URLs, HTML hashes, descriptions, directions, asset types, support, deployment and documentation links. The architect sees every entry, with expanded evidence for likely matches. It also attempts live refreshes; blocked access is labelled honestly. A missing result never proves that no integration exists elsewhere. Both generation.json files retain the signed, reviewed suitability decision and API plan.
 
+Inspect the [complete catalog](apps/api/resources/catalog/integration-hub.json) and the [136-case qualification results](docs/validation/suitability-2026-11-04.md).
+
 ## Install an MI
 
 Docker with Compose is sufficient. Unzip either runtime, then:
