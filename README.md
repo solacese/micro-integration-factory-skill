@@ -4,7 +4,14 @@ Describe the behavior, build **Core.java**, and download **MI v1**.
 
 [Open the factory](https://solacese.github.io/micro-integration-factory-skill/demo.html)
 
-The dark, minimal website has chat on the left, build status on the right, and one download button. The advisor researches primary documentation and uses SAP AI Core to write the core Java business logic. A deterministic packager adds the standard runtime rather than asking the model to invent a framework.
+The dark, minimal website has chat on the left, build status on the right, and one download button.
+
+1. **Describe** what comes in and what should come out.
+2. **Confirm** the service/API after reviewing its official documentation link and proposed Java library or JDK approach. Click **Yes, generate MI v1** or type **yes**. Choose **Change service** to correct the selection.
+3. **Download** the complete MI: Core.java bundled with its runtime, installation scripts, and contract tests.
+
+A short clarification stays in the same chat, with a five-user-turn maximum per draft. No code is generated before confirmation, and the confirmed API plan is included in generation.json. The advisor researches primary documentation and uses SAP AI Core to write the core Java business logic. A deterministic packager adds the standard runtime.
+
 
 ## Use Claude Code
 
@@ -77,4 +84,4 @@ Use Java 17+ and Maven to enable the generated-project compilation tests. The ne
 
 The old full control-plane UI and templates remain in `apps/web`, `apps/api`, and `archive/` for historical use; they are not the public v1 experience. The prior EC2 deployment remains retired. The current public advisor is a separate small deployment.
 
-Webhook requests such as “listen to Stripe webhooks and post customer transactions to multiple Solace topics” generate a v1 using stated topic defaults. Stripe projects include raw-body signature verification, HTTP-only intake, signed local fixtures, and a broker test that checks every expected destination. The download explains local Stripe CLI setup and the HTTPS/signing-secret requirements for connecting a real account. Multi-topic fan-out is not atomic, and downstream consumers must handle duplicate events.
+Webhook requests such as “listen to Stripe webhooks and post customer transactions to multiple Solace topics” first confirm Stripe Webhooks and its official documentation, then generate a v1 using stated topic defaults. Stripe projects include raw-body signature verification, HTTP-only intake, signed local fixtures, and a broker test that checks every expected destination. The download explains local Stripe CLI setup and the HTTPS/signing-secret requirements for connecting a real account. Multi-topic fan-out is not atomic, and downstream consumers must handle duplicate events.

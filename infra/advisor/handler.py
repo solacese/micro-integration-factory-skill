@@ -89,7 +89,11 @@ def lambda_handler(event, context):
         if not isinstance(request, dict):
             raise ValueError("Send a JSON object")
         _quota(event)
-        result = advisor.respond(request.get("messages"), request.get("coreJava", ""))
+        result = advisor.respond(
+            request.get("messages"),
+            request.get("coreJava", ""),
+            request.get("confirmationToken", ""),
+        )
         return _response(200, result)
     except (ValueError, TypeError) as error:
         return _response(429 if "limit" in str(error) else 400, {"error": str(error)})

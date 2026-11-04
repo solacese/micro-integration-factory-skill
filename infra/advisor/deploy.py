@@ -10,6 +10,7 @@ import subprocess
 import time
 import zipfile
 from pathlib import Path
+from secrets import token_urlsafe
 
 import boto3
 from dotenv import dotenv_values
@@ -172,6 +173,25 @@ def deploy(env_file: Path, region: str):
             ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
         ).strip(),
     }
+    # Shared across Lambda instances and retained on redeploys. Never sent to the browser.
+    existing_config = None
+    try:
+        existing_config = function.get_function_configuration(FunctionName=NAME)
+        confirmation_key = (
+            existing_config.get("Environment", {})
+            .get("Variables", {})
+            .get("FACTORY_CONFIRMATION_KEY")
+        )
+    except function.exceptions.ResourceNotFoundException:
+        confirmation_key = None
+    environment["FACTORY_CONFIRMATION_KEY"] = confirmation_key or token_urlsafe(32)
+    if existing_config and not confirmation_key:
+        bootstrap = dict(existing_config.get("Environment", {}).get("Variables", {}))
+        bootstrap["FACTORY_CONFIRMATION_KEY"] = environment["FACTORY_CONFIRMATION_KEY"]
+        function.update_function_configuration(
+            FunctionName=NAME, Environment={"Variables": bootstrap}
+        )
+        function.get_waiter("function_updated_v2").wait(FunctionName=NAME)
     try:
         function.get_function(FunctionName=NAME)
         function.update_function_code(FunctionName=NAME, ZipFile=package.read_bytes())

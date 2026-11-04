@@ -82,8 +82,8 @@ class SapAiCoreProvider:
             "reasoning": {"effort": "medium"},
             "tools": [{"type": "function", **tool["function"]} for tool in tools],
         }
-        if len(tools) == 1 and tools[0]["function"]["name"] == "build_v1":
-            body["tool_choice"] = {"type": "function", "name": "build_v1"}
+        if len(tools) == 1:
+            body["tool_choice"] = {"type": "function", "name": tools[0]["function"]["name"]}
         for attempt in range(2):
             token = self._access_token(refresh=attempt > 0)
             response = self.client.post(

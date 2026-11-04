@@ -23,6 +23,7 @@ advisor = AdvisorService()
 class ChatRequest(BaseModel):
     messages: list[dict] = Field(min_length=1, max_length=16)
     coreJava: str = Field(default="", max_length=45_000)
+    confirmationToken: str = Field(default="", max_length=24_000)
 
 
 @app.get("/health")
@@ -37,7 +38,7 @@ def health():
 @app.post("/chat")
 def chat(request: ChatRequest):
     try:
-        return advisor.respond(request.messages, request.coreJava)
+        return advisor.respond(request.messages, request.coreJava, request.confirmationToken)
     except ValueError as error:
         raise HTTPException(400, str(error)) from None
     except (RuntimeError, TimeoutError):

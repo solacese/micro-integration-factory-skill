@@ -12,7 +12,7 @@ import httpx
 import pytest
 
 from spec2event.adapters.ai.sap_ai_core import SapAiCoreProvider
-from spec2event.services import advisor_service, research_service
+from spec2event.services import advisor_service, research_service, service_confirmation
 from spec2event.services.core_project_service import create_core_project
 
 CORE = """package com.solace.mi;
@@ -35,6 +35,19 @@ def spec():
         "core_java": CORE,
         "examples": [{"input": "hello", "output": "HELLO"}, {"input": "", "expected_error": True}],
     }
+
+
+def generate_after_confirmation(provider, request):
+    plan = {"services": [{"name": "Java message processor", "supported": True}], "sources": []}
+    token = service_confirmation.seal(plan, request, "")
+    return advisor_service.AdvisorService(provider).respond(
+        [
+            {"role": "user", "content": request},
+            {"role": "assistant", "content": "Is this the right service?"},
+            {"role": "user", "content": "Yes, generate MI v1"},
+        ],
+        confirmation_token=token,
+    )
 
 
 def test_download_is_reproducible_complete_and_honest_about_verification():
@@ -275,9 +288,7 @@ def test_advisor_can_generate_without_claiming_build_or_test_success(monkeypatch
                 ],
             }
 
-    result = advisor_service.AdvisorService(Provider()).respond(
-        [{"role": "user", "content": "Uppercase text"}]
-    )
+    result = generate_after_confirmation(Provider(), "Uppercase text")
     assert result["status"] == "generated"
     assert result["project"]["zipBase64"]
     assert "excerpt" not in result["sources"][0]
@@ -374,9 +385,7 @@ def test_research_loops_are_cut_short_to_reserve_a_build(monkeypatch):
             }
 
     provider = Provider()
-    result = advisor_service.AdvisorService(provider).respond(
-        [{"role": "user", "content": "Route events to multiple topics"}]
-    )
+    result = generate_after_confirmation(provider, "Route events to multiple topics")
     assert result["status"] == "generated" and provider.rounds == 3
 
 
@@ -408,9 +417,7 @@ def test_packaging_failures_are_repaired_instead_of_asking_to_narrow_the_request
                 ],
             }
 
-    result = advisor_service.AdvisorService(Provider()).respond(
-        [{"role": "user", "content": "Uppercase text"}]
-    )
+    result = generate_after_confirmation(Provider(), "Uppercase text")
     assert result["status"] == "generated"
 
 
@@ -432,9 +439,7 @@ def test_exhausted_build_is_a_retryable_service_failure_not_a_missing_requiremen
                 ],
             }
 
-    result = advisor_service.AdvisorService(Provider()).respond(
-        [{"role": "user", "content": "Uppercase text"}]
-    )
+    result = generate_after_confirmation(Provider(), "Uppercase text")
     assert result["status"] == "build_failed"
     assert "you do not need to narrow" in result["content"]
     assert result["project"] is None

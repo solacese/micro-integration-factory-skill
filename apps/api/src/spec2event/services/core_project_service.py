@@ -22,7 +22,9 @@ DEPENDENCIES = {
 }
 
 
-def create_core_project(spec: dict, sources: list[dict] | None = None) -> dict:
+def create_core_project(
+    spec: dict, sources: list[dict] | None = None, service_plan: list[dict] | None = None
+) -> dict:
     if not (TEMPLATES / "pom.xml.j2").is_file():
         raise RuntimeError("The standard Java runtime templates are missing")
     name = safe_slug(str(spec.get("name", "my-mi")))[:64]
@@ -140,6 +142,7 @@ def create_core_project(spec: dict, sources: list[dict] | None = None) -> dict:
             },
             "assumptions": spec.get("assumptions", []),
             "sources": evidence,
+            "confirmedServicePlan": service_plan or [],
         },
         indent=2,
     )

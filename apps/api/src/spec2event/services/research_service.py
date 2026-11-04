@@ -48,6 +48,14 @@ CATALOG = [
     ),
     ("Stripe webhook setup retries snapshot events", "https://docs.stripe.com/webhooks.md"),
     (
+        "Salesforce REST API records query create update OAuth",
+        "https://developer.salesforce.com/docs/platform/api-rest/guide/intro-rest.md",
+    ),
+    (
+        "Salesforce Pub/Sub API CDC platform events gRPC Avro",
+        "https://developer.salesforce.com/docs/platform/pub-sub-api/guide/intro.md",
+    ),
+    (
         "Stripe webhook signatures raw payload timestamp HMAC",
         "https://raw.githubusercontent.com/stripe/stripe-java/master/src/main/java/com/stripe/net/Webhook.java",
     ),
@@ -81,6 +89,8 @@ HOSTS = {
     "docs.docker.com",
     "docs.spring.io",
     "repo.maven.apache.org",
+    "developer.salesforce.com",
+    "docs.oracle.com",
 }
 GITHUB_ORGS = {
     "SolaceProducts",
@@ -92,6 +102,8 @@ GITHUB_ORGS = {
     "FasterXML",
     "networknt",
     "protocolbuffers",
+    "forcedotcom",
+    "salesforce",
 }
 MAX_BYTES = 600_000
 _cache: dict[str, tuple[float, dict]] = {}
@@ -159,7 +171,12 @@ def fetch_reference(url: str, title: str = "Primary documentation") -> dict:
     original = url
     try:
         with httpx.Client(
-            timeout=httpx.Timeout(8, connect=3), headers={"User-Agent": "Solace-MI-Factory/1.0"}
+            timeout=httpx.Timeout(8, connect=3),
+            headers={
+                "User-Agent": "Solace-MI-Factory/1.0",
+                "Accept": "text/markdown, text/html;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            },
         ) as client:
             for _ in range(4):
                 if not allowed_url(url):
@@ -246,6 +263,8 @@ def research(query: str, limit=4) -> list[dict]:
             item for item in CATALOG if item[0].startswith("Spring Cloud Stream dynamic")
         ]
         candidates = candidates[:limit]
+    elif "salesforce" in words:
+        candidates = [item for item in ranked if item[0].startswith("Salesforce")][:limit]
     # Search adds discovery beyond the catalog; only verified primary-host pages
     # can enter evidence. Search snippets themselves are never treated as facts.
     try:
@@ -263,6 +282,7 @@ def research(query: str, limit=4) -> list[dict]:
                 "Kafka",
                 "PostgreSQL",
                 "Stripe",
+                "Salesforce",
                 "MQTT",
                 "REST",
                 "schema registry",
@@ -278,6 +298,8 @@ def research(query: str, limit=4) -> list[dict]:
         )
         if "stripe" in words:
             search_query = "Stripe webhooks signature documentation site:docs.stripe.com"
+        elif "salesforce" in words:
+            search_query = "Salesforce API documentation REST Pub/Sub site:developer.salesforce.com"
         r = httpx.get(
             "https://www.bing.com/search?" + urlencode({"format": "rss", "q": search_query}),
             timeout=4,
@@ -287,7 +309,7 @@ def research(query: str, limit=4) -> list[dict]:
                 url = item.findtext("link", "")
                 if allowed_url(url) and url not in {p[1] for p in candidates}:
                     # Curated vendor references are already direct primary sources.
-                    if "stripe" not in words:
+                    if not {"stripe", "salesforce"} & words:
                         candidates.insert(0, (item.findtext("title", "Documentation"), url))
                     break
     except Exception:
