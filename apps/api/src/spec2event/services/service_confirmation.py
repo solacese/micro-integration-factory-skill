@@ -14,6 +14,12 @@ import time
 from spec2event.services.research_service import allowed_url, fetch_reference
 
 _LOCAL_KEY = secrets.token_bytes(32)
+VENDOR_REFERENCES = {
+    "Salesforce REST API": "https://raw.githubusercontent.com/forcedotcom/dataloader/master/src/main/java/com/salesforce/dataloader/client/CompositeRESTClient.java",
+    "Salesforce Bulk API 2.0": "https://raw.githubusercontent.com/forcedotcom/dataloader/master/src/main/java/com/salesforce/dataloader/client/BulkV2Client.java",
+    "Salesforce Pub/Sub API": "https://raw.githubusercontent.com/forcedotcom/pub-sub-api/main/README.md",
+    "Salesforce SOAP API": "https://raw.githubusercontent.com/forcedotcom/wsc/master/README.md",
+}
 AFFIRMATIONS = {
     "yes",
     "yes please",
@@ -304,6 +310,15 @@ def verified_plan(request: str, sources: list[dict], provider) -> dict:
             source = fetch_reference(
                 service["documentation"], service["name"] + " official documentation"
             )
+        if (
+            source.get("status") != "fetched" or len(source.get("excerpt", "").strip()) < 100
+        ) and service["name"] in VENDOR_REFERENCES:
+            source = fetch_reference(
+                VENDOR_REFERENCES[service["name"]],
+                service["name"] + " vendor-published API reference",
+            )
+            if source.get("status") == "fetched":
+                service["verificationUrl"] = source["url"]
         if source.get("status") != "fetched" or len(source.get("excerpt", "").strip()) < 100:
             raise ValueError(
                 "I could not read the official documentation for "
@@ -333,6 +348,11 @@ def describe(plan: dict) -> str:
             + service["nature"]
             + "\nJava: "
             + service["library"]
+            + (
+                "\nVerified vendor reference: " + service["verificationUrl"]
+                if service.get("verificationUrl")
+                else ""
+            )
             + ("\nPlan: " + service["approach"] if not service["supported"] else "")
         )
     if not all(service["supported"] for service in plan["services"]):

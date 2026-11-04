@@ -31,6 +31,7 @@ def research(monkeypatch):
         return evidence(url)
 
     monkeypatch.setattr(service_confirmation, "fetch_reference", fetch)
+    monkeypatch.setattr(advisor_service, "fetch_reference", fetch)
     return calls
 
 
@@ -281,3 +282,22 @@ def test_discovery_cannot_call_the_generation_tool(research):
         [{"role": "user", "content": "Connect another vendor API to Solace"}]
     )
     assert result["project"] is None and not result.get("confirmationToken")
+
+
+def test_vendor_source_verifies_salesforce_when_doc_pages_reject_server_requests(
+    research, monkeypatch
+):
+    def fetch(url, title="Documentation"):
+        if "developer.salesforce.com" in url:
+            return {"url": url, "status": "unavailable", "reason": "HTTPStatusError"}
+        return evidence(url)
+
+    monkeypatch.setattr(service_confirmation, "fetch_reference", fetch)
+    result = advisor_service.AdvisorService(NoGeneration()).respond(
+        [{"role": "user", "content": "Create Salesforce Account records using REST"}]
+    )
+    assert result["status"] == "awaiting_confirmation" and result["project"] is None
+    service = result["servicePlan"]["services"][0]
+    assert service["documentation"].startswith("https://developer.salesforce.com/")
+    assert service["verificationUrl"].startswith("https://raw.githubusercontent.com/forcedotcom/")
+    assert "Verified vendor reference" in result["content"]

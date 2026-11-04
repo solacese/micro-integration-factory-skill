@@ -235,7 +235,13 @@ class AdvisorService:
         if not all(service["supported"] for service in plan["services"]):
             return self._result(describe(plan), plan["sources"], None, started)
         # Carry the reviewed provenance into the artifact, not just newly fetched references.
-        sources.extend(dict(source, status="fetched") for source in plan["sources"])
+        for source in plan["sources"][:6]:
+            evidence = fetch_reference(
+                source["url"], source.get("title", "Confirmed API documentation")
+            )
+            sources.append(
+                evidence if evidence.get("status") == "fetched" else dict(source, status="fetched")
+            )
         system = SYSTEM + "\nFetched source evidence:\n" + json.dumps(sources)
         system += "\nUser-confirmed service/API plan:\n" + json.dumps(plan)
         stripe_webhook = any(service["name"] == "Stripe Webhooks" for service in plan["services"])
