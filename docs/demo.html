@@ -3,17 +3,31 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="dark"><link rel="icon" type="image/png" href="assets/factory-pipes-logo.png">
-<title>MI Factory</title>
+<title>Solace Micro Integration Factory</title>
 <meta name="description" content="Check the fit, reuse existing integrations, or build tested Java and Go MIs.">
-<link rel="stylesheet" href="demo.css?v=8312cb3b3b">
+<link rel="stylesheet" href="demo.css?v=1726e0d5cc">
 </head>
 <body>
-<header><div class="brand"><img src="assets/factory-pipes-logo.png" alt="A friendly factory making pipes" width="82" height="58"><strong>MI <span>Factory</span></strong></div><button class="quiet" id="reset" type="button">New MI</button></header>
+<header><div class="brand"><img src="assets/factory-pipes-logo.png" alt="" width="82" height="58"><h1>Solace Micro Integration <span>Factory</span></h1></div><button class="quiet" id="reset" type="button">New MI</button></header>
 <main>
 <section class="chat" aria-label="Integration conversation">
-  <div class="chat-title"><h1>The right integration starts here.</h1><p class="sub">Describe → review → download. Reuse what exists. Create what’s missing.</p></div>
   <div id="messages" role="log" aria-live="polite"></div>
-  <form id="form"><div class="composer"><textarea id="input" aria-label="Describe your micro integration" placeholder="What should your MI do?" rows="2" maxlength="10000"></textarea><button id="send" type="submit" aria-label="Send message">↑</button></div><p class="hint">Enter to send · Shift + Enter for a new line · Use placeholders for credentials</p></form>
+  <form id="form">
+    <div class="template-bar">
+      <div class="template-heading">
+        <span id="template-label">Templates</span>
+        <a href="https://solace.com/integration-hub/" target="_blank" rel="noopener noreferrer">Browse 111 Hub entries ↗</a>
+      </div>
+      <div class="templates" role="group" aria-labelledby="template-label">
+        <button type="button" data-template="anonymization">Anonymization<span>Remove personal fields</span></button>
+        <button type="button" data-template="transformation">Transformation<span>Map fields and formats</span></button>
+        <button type="button" data-template="target">Target MI<span>Solace → external system</span></button>
+        <button type="button" data-template="source">Source MI<span>External system → Solace</span></button>
+      </div>
+    </div>
+    <div class="composer"><textarea id="input" aria-label="Describe your micro integration" placeholder="What should your MI do?" rows="2" maxlength="10000"></textarea><button id="send" type="submit" aria-label="Send message">↑</button></div>
+    <p class="hint">Enter to send · Shift + Enter for a new line · Use placeholders for credentials</p>
+  </form>
 </section>
 <aside aria-label="Build status">
   <h2>Status</h2>
@@ -30,6 +44,6 @@
   <section class="performance" id="performance" aria-label="Measured performance" hidden></section>
 </aside>
 </main>
-<script src="demo.js?v=71d45bde81" defer></script>
+<script src="demo.js?v=53b85999c1" defer></script>
 </body>
 </html>

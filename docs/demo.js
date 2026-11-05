@@ -2,6 +2,13 @@
   'use strict';
   var byId = function (id) { return document.getElementById(id); };
   var input = byId('input'), messages = byId('messages'), send = byId('send');
+  var templateButtons = document.querySelectorAll('[data-template]');
+  var templatePrompts = {
+    anonymization: 'Read customer activity JSON from a Solace queue. Keep only eventType and productCategory, and publish the result to activity/anonymized.',
+    transformation: 'Read order JSON from a Solace queue. Convert orderId and total to XML and publish it to orders/transformed.',
+    target: 'Consume events from [Solace queue] and deliver them to [external system or API]. Acknowledge each message after successful delivery.',
+    source: 'Read events from [external system or API] and publish them to [Solace topic]. Load credentials from configuration.'
+  };
   var history = [], project = null, previousCore = '', previousGo = '', busy = false, endpoint = '', tick = null, controller = null, started = 0;
   var session = 0, confirmationToken = '', pendingJob = null;
   var jobStorageKey = 'mi-factory-validation-v1';
@@ -23,7 +30,13 @@
     });
     message.append(who, body); messages.appendChild(message); messages.scrollTop = messages.scrollHeight;
   }
-  function ui(value) { busy = value; input.disabled = value; send.disabled = value || !endpoint; byId('messages').setAttribute('aria-busy', String(value)); }
+  function ui(value) {
+    busy = value;
+    input.disabled = value;
+    send.disabled = value || !endpoint;
+    templateButtons.forEach(function (button) { button.disabled = value; });
+    messages.setAttribute('aria-busy', String(value));
+  }
   function timer() { var seconds = Math.floor((Date.now() - started) / 1000); byId('timer').textContent = Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0') + ' elapsed'; }
   function clearArtifact() { project = null; byId('performance').hidden=true; byId('performance').replaceChildren(); ['download','download-go','download-config','download-tests'].forEach(function(id){byId(id).disabled=true;}); byId('details').textContent = ''; byId('file-status').textContent = 'One behavior. Two complete runtimes.'; }
   function clearConfirmationActions() { messages.querySelectorAll('.confirm-actions').forEach(function (item) { item.remove(); }); }
@@ -113,7 +126,7 @@
       var retry = document.createElement('button'); retry.className = 'quiet'; retry.type = 'button'; retry.textContent = 'Retry build';
       retry.onclick = function () { retry.remove(); request(); }; messages.appendChild(retry);
     } finally {
-      clearTimeout(timeout); if (thisSession === session) { clearInterval(tick); controller = null; ui(false); input.focus(); }
+      clearTimeout(timeout); if (thisSession === session) { clearInterval(tick); controller = null; ui(false); input.focus({ preventScroll: true }); }
     }
   }
   async function waitForValidation(job, currentSession) {
@@ -156,9 +169,20 @@
     var scope=document.createElement('small');scope.textContent='10 s measured after 10 s warmup · synthetic fixtures and isolated broker · 2 CPUs per runtime. Fixed-load qualification, not maximum capacity. ¹ Peak sampled memory. Full results included in each ZIP.';panel.appendChild(scope);
   }
   byId('form').addEventListener('submit', function (event) { event.preventDefault(); submit(input.value.trim()); });
-  input.addEventListener('input', function () { input.style.height = 'auto'; input.style.height = Math.min(input.scrollHeight, 160) + 'px'; });
+  function resizeInput() {
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+  }
+  input.addEventListener('input', resizeInput);
+  templateButtons.forEach(function (button) {
+    button.addEventListener('click', function () {
+      input.value = templatePrompts[button.dataset.template];
+      resizeInput();
+      input.focus();
+    });
+  });
   input.addEventListener('keydown', function (event) { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); byId('form').requestSubmit(); } });
-  byId('reset').addEventListener('click', function () { forgetJob(); session++; if (controller) controller.abort(); controller = null; clearInterval(tick); history = []; previousCore = ''; previousGo=''; confirmationToken = ''; pendingJob=null; clearArtifact(); messages.replaceChildren(); byId('timer').textContent = ''; input.value = ''; input.placeholder = 'What should your MI do?'; ui(false); state('Ready to build', 'Describe your idea in the chat.'); welcome(); input.focus(); });
+  byId('reset').addEventListener('click', function () { forgetJob(); session++; if (controller) controller.abort(); controller = null; clearInterval(tick); history = []; previousCore = ''; previousGo=''; confirmationToken = ''; pendingJob=null; clearArtifact(); messages.replaceChildren(); byId('timer').textContent = ''; input.value = ''; input.style.height = 'auto'; input.placeholder = 'What should your MI do?'; ui(false); state('Ready to build', 'Describe your idea in the chat.'); welcome(); input.focus(); });
   async function downloadArtifact(item) {
     if (!item) return;
     try {
