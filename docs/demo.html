@@ -5,19 +5,26 @@
 <meta name="color-scheme" content="dark"><link rel="icon" type="image/png" href="assets/factory-pipes-logo.png">
 <title>Solace Micro Integration Factory</title>
 <meta name="description" content="Check the fit, reuse existing integrations, or build tested Java and Go MIs.">
-<link rel="stylesheet" href="demo.css?v=1726e0d5cc">
+<link rel="stylesheet" href="demo.css?v=db334c440e">
 </head>
 <body>
-<header><div class="brand"><img src="assets/factory-pipes-logo.png" alt="" width="82" height="58"><h1>Solace Micro Integration <span>Factory</span></h1></div><button class="quiet" id="reset" type="button">New MI</button></header>
+<header>
+  <div class="brand"><img src="assets/factory-pipes-logo.png" alt="" width="82" height="58"><h1>Solace Micro Integration <span>Factory</span></h1></div>
+  <div class="header-actions">
+    <nav class="resource-links" aria-label="Solace resources">
+      <a href="https://solace.com/integration-hub/" target="_blank" rel="noopener noreferrer">MI Hub</a>
+      <a href="https://solace.com/whats-new/ai-assisted-mdk/" target="_blank" rel="noopener noreferrer">AI 4 MI</a>
+      <a href="https://community.solace.com/t/availability-of-the-solace-micro-integration-development-kit-early-access/4553" target="_blank" rel="noopener noreferrer">MI SDK</a>
+    </nav>
+    <button class="quiet" id="reset" type="button">New MI</button>
+  </div>
+</header>
 <main>
 <section class="chat" aria-label="Integration conversation">
   <div id="messages" role="log" aria-live="polite"></div>
   <form id="form">
     <div class="template-bar">
-      <div class="template-heading">
-        <span id="template-label">Templates</span>
-        <a href="https://solace.com/integration-hub/" target="_blank" rel="noopener noreferrer">Browse 111 Hub entries ↗</a>
-      </div>
+      <div class="template-heading" id="template-label">Templates</div>
       <div class="templates" role="group" aria-labelledby="template-label">
         <button type="button" data-template="anonymization">Anonymization<span>Remove personal fields</span></button>
         <button type="button" data-template="transformation">Transformation<span>Map fields and formats</span></button>
