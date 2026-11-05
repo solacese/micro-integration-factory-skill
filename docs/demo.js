@@ -33,7 +33,7 @@
   function ui(value) {
     busy = value;
     input.disabled = value;
-    send.disabled = value || !endpoint;
+    send.disabled = value;
     templateButtons.forEach(function (button) { button.disabled = value; });
     messages.setAttribute('aria-busy', String(value));
   }
@@ -41,7 +41,7 @@
   function clearArtifact() { project = null; byId('performance').hidden=true; byId('performance').replaceChildren(); ['download','download-go','download-config','download-tests'].forEach(function(id){byId(id).disabled=true;}); byId('details').textContent = ''; byId('file-status').textContent = 'One behavior. Two complete runtimes.'; }
   function clearConfirmationActions() { messages.querySelectorAll('.confirm-actions').forEach(function (item) { item.remove(); }); }
   function submit(text) {
-    if (!text || busy || !endpoint) return;
+    if (!text || busy) return;
     pendingJob=null; forgetJob();
     clearConfirmationActions(); append('user', text); history.push({ role: 'user', content: text });
     input.value = ''; input.style.height = 'auto'; request();
@@ -55,13 +55,16 @@
     actions.append(yes, change); messages.lastElementChild.appendChild(actions); messages.scrollTop = messages.scrollHeight;
   }
   async function request() {
-    if (busy || !endpoint) return;
+    if (busy) return;
     var thisSession = session; ui(true); clearArtifact();
     var approving = confirmationToken && /^(yes|confirm|proceed|generate|oui|correct)/i.test(history[history.length - 1].content.trim());
     state(approving ? 'Building your v1' : 'Checking the fit', approving ? 'Writing Java and Go, then bundling both MIs…' : 'Checking Integration Hub, requirements and official API docs…', 'working');
     started = pendingJob && pendingJob.clientStarted || Date.now(); timer(); tick = setInterval(timer, 1000);
     controller = new AbortController(); var timeout = setTimeout(function () { if (controller) controller.abort(); }, 240000);
     try {
+      var apiBase = endpoint || await loadEndpoint(controller.signal);
+      if (thisSession !== session) return;
+      endpoint = apiBase;
       var data;
       if (pendingJob) data = pendingJob;
       else {
@@ -181,7 +184,11 @@
       input.focus();
     });
   });
-  input.addEventListener('keydown', function (event) { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); byId('form').requestSubmit(); } });
+  input.addEventListener('keydown', function (event) {
+    if (event.key !== 'Enter' || event.shiftKey || event.isComposing || event.keyCode === 229) return;
+    event.preventDefault();
+    if (!event.repeat) submit(input.value.trim());
+  });
   byId('reset').addEventListener('click', function () { forgetJob(); session++; if (controller) controller.abort(); controller = null; clearInterval(tick); history = []; previousCore = ''; previousGo=''; confirmationToken = ''; pendingJob=null; clearArtifact(); messages.replaceChildren(); byId('timer').textContent = ''; input.value = ''; input.style.height = 'auto'; input.placeholder = 'What should your MI do?'; ui(false); state('Ready to build', 'Describe your idea in the chat.'); welcome(); input.focus(); });
   async function downloadArtifact(item) {
     if (!item) return;
@@ -201,19 +208,23 @@
   byId('download-config').addEventListener('click',function(){if(project)downloadArtifact(project.configuration);});
   byId('download-tests').addEventListener('click',function(){if(project)downloadArtifact(project.tests);});
   function welcome() { append('assistant', 'What should your MI do? I’ll check whether it already exists in Solace Integration Hub and whether a custom MI fits. If it does, we’ll confirm the API and build it.'); }
-  async function connect() {
-    ui(false); send.disabled = true;
-    try {
-      var config = await fetch('demo-config.json', { cache: 'no-store' }); if (!config.ok) throw new Error('Missing service configuration');
-      var data = await config.json(); var parsed = new URL(data.apiBaseUrl);
-      if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(parsed.hostname))) throw new Error('Invalid service URL');
-      endpoint = parsed.href.replace(/\/$/, '');
-      var health = await fetch(endpoint + '/health', { signal: AbortSignal.timeout(15000) }); if (!health.ok) throw new Error('Service unavailable');
-      ui(false);
-      try { var saved=JSON.parse(sessionStorage.getItem(jobStorageKey)||'null');
-        if(saved && saved.status==='validating' && /^[a-f0-9]{32}$/.test(saved.jobId||'') && typeof saved.validationToken==='string' && saved.validationToken.length<2000) {pendingJob=saved;request();}
-      } catch(error) { forgetJob(); }
-    } catch (error) { endpoint = ''; state('Temporarily unavailable', 'Please refresh in a moment to try again.'); send.disabled = true; }
+  async function loadEndpoint(signal) {
+    var config = await fetch('demo-config.json', { cache: 'no-store', signal: signal });
+    if (!config.ok) throw new Error('The factory could not load its connection settings. Please retry.');
+    var data = await config.json();
+    var parsed = new URL(data.apiBaseUrl);
+    if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(parsed.hostname))) throw new Error('Invalid service URL');
+    return parsed.href.replace(/\/$/, '');
   }
-  welcome(); connect();
+  function resumeValidation() {
+    try {
+      var saved = JSON.parse(sessionStorage.getItem(jobStorageKey) || 'null');
+      if (saved && saved.status === 'validating' && /^[a-f0-9]{32}$/.test(saved.jobId || '') && typeof saved.validationToken === 'string' && saved.validationToken.length < 2000) {
+        pendingJob = saved;
+        request();
+      }
+    } catch (error) { forgetJob(); }
+  }
+  welcome();
+  resumeValidation();
 })();
