@@ -18,6 +18,7 @@ VENDOR_REFERENCES = {
     "Salesforce REST API": "https://raw.githubusercontent.com/forcedotcom/dataloader/master/src/main/java/com/salesforce/dataloader/client/CompositeRESTClient.java",
     "Salesforce Bulk API 2.0": "https://raw.githubusercontent.com/forcedotcom/dataloader/master/src/main/java/com/salesforce/dataloader/client/BulkV2Client.java",
     "Salesforce Pub/Sub API": "https://raw.githubusercontent.com/forcedotcom/pub-sub-api/main/README.md",
+    "Salesforce CDC message processor": "https://raw.githubusercontent.com/forcedotcom/pub-sub-api/main/README.md",
     "Salesforce SOAP API": "https://raw.githubusercontent.com/forcedotcom/wsc/master/README.md",
 }
 AFFIRMATIONS = {
@@ -183,7 +184,9 @@ def known_services(request: str) -> list[dict]:
             )
             if re.search(r"\b(existing|upstream)\s+(?:salesforce\s+)?connector\b", latest):
                 services[-1].update(
+                    name="Salesforce CDC message processor",
                     supported=True,
+                    nature="Decoded CDC JSON already on Solace. The upstream connector owns the Salesforce Pub/Sub session.",
                     library="Java 17 + Jackson 3 for messages delivered by the existing connector; the connector owns the gRPC/Avro subscription.",
                     approach="Use the existing upstream connector to deliver decoded JSON events onto Solace. Core.java processes those messages; this package does not create a Salesforce subscriber.",
                 )
@@ -309,7 +312,7 @@ def verified_plan(request: str, sources: list[dict], provider) -> dict:
             "Go crypto/hmac + encoding/json; the fixed runtime verifies Stripe signatures."
             if service["name"] == "Stripe Webhooks"
             else "Go standard library and declared schema packages; broker transport selected below."
-            if service["name"] == "Java message processor"
+            if service["name"] in {"Java message processor", "Salesforce CDC message processor"}
             else "Go net/http + encoding/json for REST; broker transport selected below."
             if service["supported"] and ("REST" in service["name"] or "Bulk" in service["name"])
             else "Go processes upstream messages; a native external subscriber/client is not included."

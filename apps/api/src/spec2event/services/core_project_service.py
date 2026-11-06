@@ -70,6 +70,13 @@ def create_core_project(
             raise ValueError("Each example needs output_base64 or expected_error=true")
         if not isinstance(example.get("headers", {}), dict):
             raise ValueError("Example headers must be an object")
+        if any(
+            type(value) not in (str, bool, int, float)
+            for value in example.get("headers", {}).values()
+        ):
+            raise ValueError(
+                "Example headers must be scalar broker properties. Put nested data in the payload."
+            )
         if "output_topics" in example:
             topics = example["output_topics"]
             if (

@@ -28,7 +28,8 @@ class BrokerRoundTripIT {
         return fallback;
     }
     @Test void inputTraversesRunningMiAndReturnsOnEveryExpectedTopic() throws Exception {
-        var examples=JsonMapper.builder().build().readTree(getClass().getResourceAsStream("/core-examples.json"));
+        var mapper=JsonMapper.builder().build();
+        var examples=mapper.readTree(getClass().getResourceAsStream("/core-examples.json"));
         var example=examples.valueStream().filter(e -> e.has("output_base64")).findFirst().orElseThrow();
         List<String> topics=new ArrayList<>();
         if(example.has("output_topics")) example.get("output_topics").forEach(t -> topics.add(t.asText()));
@@ -89,7 +90,7 @@ class BrokerRoundTripIT {
             message.writeBytes(input);
             message.setDeliveryMode(DeliveryMode.PERSISTENT);
             var headers=JCSMPFactory.onlyInstance().createMap();
-            if(example.has("headers")) for(var e:example.get("headers").properties()) headers.putString(e.getKey(),e.getValue().asText());
+            if(example.has("headers")) for(var e:example.get("headers").properties()) headers.putObject(e.getKey(),mapper.convertValue(e.getValue(), Object.class));
             headers.putString("mi_correlation_id",trace);
             message.setProperties(headers);
             producer.send(message,JCSMPFactory.onlyInstance().createTopic(config("messaging.input-topic","mi/{{ name }}/in")));

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from spec2event.services import advisor_service, service_confirmation
+from spec2event.services.suitability_service import VERSION
 
 REQUEST = "listen to Stripe webhooks and post customer transactions to multiple Solace topics"
 
@@ -40,7 +41,7 @@ def research(monkeypatch):
 
         def assess(self, request):
             return {
-                "version": 1,
+                "version": VERSION,
                 "decision": "build",
                 "reason": "Fixture custom processing fits.",
                 "customGap": "Fixture business behavior",
@@ -209,6 +210,25 @@ def test_salesforce_event_subscriptions_are_not_presented_as_webhooks(research):
     result = service.respond(history)
     assert result["status"] == "awaiting_confirmation"
     assert result["servicePlan"]["services"][0]["name"] == "Salesforce REST API"
+
+
+def test_existing_salesforce_cdc_is_planned_as_a_broker_processor(research):
+    result = advisor_service.AdvisorService(NoGeneration()).respond(
+        [
+            {
+                "role": "user",
+                "content": (
+                    "Our existing Salesforce connector delivers decoded CDC JSON to Solace. "
+                    "Route the events by our custom account score."
+                ),
+            },
+        ]
+    )
+    assert result["status"] == "awaiting_confirmation"
+    service = result["servicePlan"]["services"][0]
+    assert service["name"] == "Salesforce CDC message processor"
+    assert "already on Solace" in service["nature"]
+    assert "standard library" in service["goLibrary"]
 
 
 def test_unavailable_official_docs_do_not_lead_to_a_confirmable_unverified_plan(

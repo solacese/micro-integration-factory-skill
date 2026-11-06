@@ -1,6 +1,6 @@
 [
   {"id":"salesforce-events","request":"Subscribe to Salesforce CDC and platform events and publish them to Solace topics.","decisions":["reuse"],"matches":["salesforce"]},
-  {"id":"salesforce-rest","request":"Consume Solace transaction events and update Salesforce Account records via REST using a custom per-customer field mapping. This is record CRUD, not Pub/Sub events.","decisions":["build"]},
+  {"id":"salesforce-rest","request":"Consume Solace transaction events and update Salesforce Account records via REST using a custom per-customer field mapping. This is record CRUD, not Pub/Sub events.","decisions":["architecture_review"],"forbidCovering":["salesforce"]},
   {"id":"kafka-bridge","request":"Move Kafka topic orders into Solace, and Solace topic shipments back to Kafka. No custom processing.","decisions":["reuse"],"matches":["integrated-kafka"]},
   {"id":"s3-target","request":"Archive messages from a Solace queue into Amazon S3 objects.","decisions":["reuse"],"matches":["amazon-s3-producer"]},
   {"id":"s3-source","request":"Watch S3 objects and send their contents as events to Solace.","decisions":["reuse"],"matches":["amazon-s3"]},
@@ -14,6 +14,7 @@
   {"id":"mqtt-client","request":"My device speaks MQTT. I want it to publish to Solace. Do I need another MI to translate the protocol?","decisions":["reuse"],"matches":["mqtt"]},
   {"id":"standard-transform","request":"Convert JSON messages to XML and change headers between two Solace topics using standard mappings.","decisions":["reuse"],"matches":["transformer"]},
   {"id":"stripe-custom","request":"Listen to signed Stripe snapshot webhooks and post customer transactions to multiple Solace topics, preserving raw event bytes and using customer-specific destinations.","decisions":["build"]},
+  {"id":"stripe-thin-with-retrieval","request":"Verify signed Stripe v2 thin notifications and fetch the related resource before publishing to Solace. Thin is mandatory.","decisions":["architecture_review"]},
   {"id":"custom-processor-existing-source","request":"Our existing Salesforce connector already delivers decoded JSON onto Solace. Build only a stateless processor applying our proprietary pricing formula: net = quantity * price minus customer discount, and reject a negative result. No changes to the source connector.","decisions":["build"]},
   {"id":"100k-throughput","request":"Build a signed Stripe webhook MI that must sustain 100,000 incoming messages per second.","decisions":["architecture_review"]},
   {"id":"hard-latency","request":"Build a custom transaction mapper with a guaranteed p99 end-to-end latency below 1 millisecond.","decisions":["architecture_review"]},

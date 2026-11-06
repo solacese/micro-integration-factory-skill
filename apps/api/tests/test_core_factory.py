@@ -14,6 +14,7 @@ import pytest
 from spec2event.adapters.ai.sap_ai_core import SapAiCoreProvider
 from spec2event.services import advisor_service, research_service, service_confirmation
 from spec2event.services.core_project_service import create_core_project
+from spec2event.services.suitability_service import VERSION
 
 CORE = """package com.solace.mi;
 import java.util.Map;
@@ -40,11 +41,15 @@ def spec():
     }
 
 
-def generate_after_confirmation(provider, request):
+def generate_after_confirmation(provider, request, service="Java message processor"):
     plan = {
-        "services": [{"name": "Java message processor", "supported": True}],
+        "services": [{"name": service, "supported": True}],
         "sources": [],
-        "qualification": {"version": 1, "decision": "build", "customGap": "Fixture transformation"},
+        "qualification": {
+            "version": VERSION,
+            "decision": "build",
+            "customGap": "Fixture transformation",
+        },
     }
     token = service_confirmation.seal(plan, request, "")
 
@@ -368,6 +373,7 @@ def test_stripe_webhook_project_uses_signed_http_intake_and_topic_contracts():
         {"webhook": "unknown"},
         {"examples": [{"input": "hello", "output": "HELLO", "output_topics": ["stripe/>"]}]},
         {"examples": [{"input": "hello", "output": "HELLO", "output_topics": []}]},
+        {"examples": [{"input": "hello", "output": "HELLO", "headers": {"changed": ["Name"]}}]},
     ],
 )
 def test_invalid_webhook_or_route_contract_is_rejected(change):
@@ -402,11 +408,27 @@ def test_research_loops_are_cut_short_to_reserve_a_build(monkeypatch):
             }
 
     provider = Provider()
-    result = generate_after_confirmation(provider, "Route events to multiple topics")
+    result = generate_after_confirmation(
+        provider, "Route events to multiple topics", service="Other verified API"
+    )
     assert result["status"] == "generated" and provider.rounds == 3
 
 
-def test_packaging_failures_are_repaired_instead_of_asking_to_narrow_the_request(monkeypatch):
+@pytest.mark.parametrize(
+    "bad_candidate",
+    [
+        {"examples": []},
+        {
+            "core_java": CORE.replace(
+                "import java.util.Map;",
+                "import java.util.Map;\nimport tools.jackson.core.JsonProcessingException;",
+            )
+        },
+    ],
+)
+def test_packaging_failures_are_repaired_instead_of_asking_to_narrow_the_request(
+    monkeypatch, bad_candidate
+):
     monkeypatch.setattr(advisor_service, "research", lambda *a, **kw: [])
 
     class Provider:
@@ -416,7 +438,7 @@ def test_packaging_failures_are_repaired_instead_of_asking_to_narrow_the_request
             self.rounds += 1
             candidate = spec()
             if self.rounds == 1:
-                candidate["examples"] = []
+                candidate.update(bad_candidate)
             else:
                 assert any(
                     "Correct the tool input" in m.get("content", "")

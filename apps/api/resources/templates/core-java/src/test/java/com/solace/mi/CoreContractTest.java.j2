@@ -7,11 +7,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class CoreContractTest {
     @Test void suppliedExamplesMeetTheContract() throws Exception {
-        var examples=JsonMapper.builder().build().readTree(getClass().getResourceAsStream("/core-examples.json"));
+        var mapper=JsonMapper.builder().build();
+        var examples=mapper.readTree(getClass().getResourceAsStream("/core-examples.json"));
         for (var example : examples) {
             byte[] input=Base64.getDecoder().decode(example.get("input_base64").asText());
             Map<String,Object> headers=new HashMap<>();
-            if (example.has("headers")) example.get("headers").properties().forEach(e -> headers.put(e.getKey(), e.getValue().asText()));
+            if (example.has("headers")) example.get("headers").properties().forEach(e -> headers.put(e.getKey(), mapper.convertValue(e.getValue(), Object.class)));
             if (example.path("expected_error").asBoolean(false)) {
                 assertThrows(Exception.class, () -> new Core().process(input, headers));
             } else {

@@ -15,7 +15,13 @@ import httpx
 from spec2event.services.research_service import allowed_url, fetch_reference
 
 CATALOG = Path(__file__).resolve().parents[3] / "resources/catalog/integration-hub.json"
-VERSION = 1
+VERSION = 2
+SCHEMA_VALIDATOR = "https://github.com/solacese/schema-validation-micro-integration"
+SCHEMA_VALIDATOR_VERSION = "v1.0.2"
+SCHEMA_VALIDATOR_README = (
+    "https://raw.githubusercontent.com/solacese/schema-validation-micro-integration/"
+    f"{SCHEMA_VALIDATOR_VERSION}/README.md"
+)
 PROFILE = {
     "qualifiedInputRate": 1000,
     "measurementSeconds": 10,
@@ -80,6 +86,8 @@ TOOL = {
                         "exactlyOnceOrAtomicity": {"type": "boolean"},
                         "durableStateOrWorkflow": {"type": "boolean"},
                         "unavailableNativeTrigger": {"type": "boolean"},
+                        "stripeThinEvents": {"type": "boolean"},
+                        "externalApiCalls": {"type": "boolean"},
                     },
                     "required": [
                         "inputMessagesPerSecond",
@@ -89,6 +97,8 @@ TOOL = {
                         "exactlyOnceOrAtomicity",
                         "durableStateOrWorkflow",
                         "unavailableNativeTrigger",
+                        "stripeThinEvents",
+                        "externalApiCalls",
                     ],
                 },
             },
@@ -119,6 +129,11 @@ Salesforce Pub/Sub events/CDC are covered by the Salesforce MI; arbitrary REST C
 Bulk jobs are distinct. SNS is target-only. S3 source and target are separate entries.
 Broker-integrated SQS is best suited to targets. Prefer the Kafka bridge for ordinary topic
 movement. Do not invent features, support entitlements, versions, prices or unlisted assets.
+Use verified published projects in the supplied evidence as reuse candidates too. The separate
+Schema Validation MI covers documented registry-backed formats and republishes validation
+outcomes. Check its exact behavior before claiming a match, especially rejection policies,
+schema framing, and registry versions. Inline schemas with custom business rules may still
+need their own processor.
 BUILD only for a concrete custom gap within the CURRENT FACTORY PROFILE. Explain that gap (e.g.
 authenticated Stripe snapshot webhooks + customer-specific fan-out). A native protocol listing
 does not replace business validation or transformation. A justified stateless processor on top
@@ -139,6 +154,13 @@ Use zero for an unspecified numerical requirement. Distinguish input from fan-ou
 A mention of low latency without a hard bound is not a hard SLO. Ordinary source-event
 IDs/deduplication caveats do not imply exactly-once is required. External live APIs need
 separate rate-limit and credential qualification, not an invented test result.
+Set stripeThinEvents only for an active requirement to consume Stripe thin webhooks. The
+factory's Stripe starter handles snapshots. Never replace explicitly requested thin events
+with snapshots. Set externalApiCalls when the generated core itself must call an external
+API to process a message, including registry lookups, Stripe resource retrieval, or Salesforce
+REST writes, even if the user intends to add credentials later. The hosted benchmark provides
+no vendor sandbox or test double for these calls. Incoming signed webhooks, already decoded
+events from existing connectors, and inline schema validation do not require external calls.
 CLARIFY only one essential ambiguity; do not ask for credentials, example payloads, topic
 names, versions or comprehensive NFR questionnaires just to build a reasonable v1. Keep
 reason/approach to one short sentence each. question must be one short question for a non-build
@@ -228,9 +250,14 @@ def lookup_catalog(request: str) -> dict:
             return []
 
     # Independent bounded lookups. A blocked Hub is not permission to invent a missing connector.
-    with ThreadPoolExecutor(max_workers=7) as pool:
+    with ThreadPoolExecutor(max_workers=8) as pool:
         hub_future = pool.submit(fetch_reference, saved["hubUrl"], "Solace Integration Hub")
         search_future = pool.submit(discover)
+        schema_future = (
+            pool.submit(fetch_reference, SCHEMA_VALIDATOR_README, "Schema Validation MI release")
+            if re.search(r"\bschema registry\b|schema-validation-micro-integration", request, re.I)
+            else None
+        )
         futures = [
             pool.submit(fetch_reference, entry["url"], entry["name"] + " Integration Hub entry")
             for entry in highlighted
@@ -259,6 +286,23 @@ def lookup_catalog(request: str) -> dict:
                     )
                 )
         hub = hub_future.result()
+        if schema_future:
+            source = schema_future.result()
+            if source.get("status") == "fetched" and len(source.get("excerpt", "")) >= 100:
+                project = {
+                    "id": "schema-validation-release",
+                    "name": f"Solace Schema Validation MI {SCHEMA_VALIDATOR_VERSION}",
+                    "url": f"{SCHEMA_VALIDATOR}/releases/tag/{SCHEMA_VALIDATOR_VERSION}",
+                    "assetType": "Published project",
+                    "directions": ["Solace → Solace"],
+                    "support": "See release documentation",
+                    "deployment": "Self-managed",
+                    "verification": "live",
+                    "capabilities": source["excerpt"][:700],
+                    "evidence": source,
+                }
+                entries.append(project)
+                highlighted.append(project)
     return {
         "url": saved["hubUrl"],
         "checkedAt": datetime.now(UTC).isoformat(),
@@ -362,6 +406,8 @@ class SuitabilityService:
             "exactlyOnceOrAtomicity",
             "durableStateOrWorkflow",
             "unavailableNativeTrigger",
+            "stripeThinEvents",
+            "externalApiCalls",
         ]:
             if not isinstance(requirements.get(key), bool):
                 raise ValueError(
@@ -461,6 +507,29 @@ class SuitabilityService:
                 "This runtime does not supply that native source trigger; confirm an actual "
                 "upstream connector before generating a processor."
             )
+        if result["decision"] != "reuse":
+            if requirements["stripeThinEvents"]:
+                result["reason"] = "Stripe thin events require authenticated resource retrieval."
+                result["suggestedApproach"] = (
+                    "Verify the thin webhook in a separate handler, retrieve its related "
+                    "resource, and publish the enriched event to Solace."
+                )
+                concerns.append("The factory's signed webhook starter handles snapshot events.")
+                result["question"] = (
+                    "Can a Stripe thin-event handler publish the enriched payload to Solace "
+                    "for the factory to process?"
+                )
+            elif requirements["externalApiCalls"]:
+                if result["decision"] == "build":
+                    result["reason"] = "This design needs a separate external API qualification."
+                concerns.append(
+                    "This design calls an external API during message processing. "
+                    "The factory's benchmark needs an isolated test endpoint for those calls. "
+                    "Qualify the external contract separately or move the calls to an upstream "
+                    "or downstream connector."
+                )
+                if not result["question"].strip():
+                    result["question"] = "Can the external API calls run in a separate connector?"
         if concerns:
             result["decision"] = "architecture_review"
             if not result["question"].strip():

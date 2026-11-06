@@ -157,6 +157,7 @@ func run(configPath, examplesPath, endpoint, out string, target, seconds, warmSe
 	client := &http.Client{Timeout: 15 * time.Second, Transport: &http.Transport{MaxIdleConns: 256, MaxIdleConnsPerHost: 256, IdleConnTimeout: 30 * time.Second}}
 	var requests sync.WaitGroup
 	slots := make(chan struct{}, 256)
+	requestFailures := make(map[string]int)
 	start := time.Now()
 	interval := time.Second / time.Duration(offered)
 	for id := 0; id < total; id++ {
@@ -179,6 +180,7 @@ func run(configPath, examplesPath, endpoint, out string, target, seconds, warmSe
 			defer requests.Done()
 			defer func() { <-slots }()
 			var failure error
+			failureCategory := "broker_send"
 			trace := prefix + strconv.Itoa(id)
 			if brokerIngress {
 				headers := map[string]any{"mi_correlation_id": trace}
@@ -198,17 +200,22 @@ func run(configPath, examplesPath, endpoint, out string, target, seconds, warmSe
 				response, err := client.Do(request)
 				if err != nil {
 					failure = err
+					failureCategory = "http_transport"
 				} else {
 					_, _ = io.Copy(io.Discard, response.Body)
 					_ = response.Body.Close()
 					if response.StatusCode != 202 {
 						failure = fmt.Errorf("http status %d", response.StatusCode)
+						failureCategory = "http_" + strconv.Itoa(response.StatusCode)
 					}
 				}
 			}
 			if failure != nil {
 				mu.Lock()
 				events[id].errors++
+				if id >= warm {
+					requestFailures[failureCategory]++
+				}
 				mu.Unlock()
 			}
 		}(id)
@@ -277,6 +284,7 @@ func run(configPath, examplesPath, endpoint, out string, target, seconds, warmSe
 	}
 	passed := delivered == count && failures == 0 && duplicates == 0 && throughput >= float64(target)
 	report := map[string]any{"passed": passed, "targetRate": target, "offeredRate": offered, "durationSeconds": seconds, "warmupSeconds": warmSeconds, "sent": count, "received": delivered, "errors": failures, "duplicates": duplicates, "payloadBytes": len(payload), "outputTopics": topics, "fanout": len(topics), "achievedRate": throughput, "peakOneSecondRate": peak, "latencyMs": statistics(latency), "generatorLagMs": statistics(lag), "elapsedSeconds": elapsed, "ingress": map[bool]string{true: "signed HTTP webhook", false: strings.ToUpper(protocol) + " input topic"}[!brokerIngress], "conditions": "isolated broker; synthetic contract fixture; 2% input overdrive; all output topics verified; not a maximum-capacity certificate"}
+	report["requestFailures"] = requestFailures
 	data, _ := json.MarshalIndent(report, "", "  ")
 	if err = os.WriteFile(out, data, 0644); err != nil {
 		return err

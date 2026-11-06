@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 
 from spec2event.adapters.ai.sap_ai_core import SapAiCoreProvider
@@ -34,6 +35,11 @@ fails, acknowledge it; do not invent SDK methods or claim a version is latest.
 
 Use the fixed runtime: Java 17, Solace MDK dependency platform 4.3.11, Spring Boot 4,
 Jackson 3 (tools.jackson.databind, JsonMapper.builder().build()), native Solace Java SMF transport.
+Jackson parser/token imports, when needed, are tools.jackson.core, never com.fasterxml.jackson.core.
+Catch tools.jackson.core.JacksonException for parse errors. Jackson 3 has no JsonProcessingException.
+For strict JSON, prefer JsonMapper.builder().enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS).build()
+and readTree(payload). Import DeserializationFeature from tools.jackson.databind.
+Enable DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS for exact numeric comparisons.
 Do not generate another control plane, app, framework, Helm chart, or long discovery interview.
 Core.java MUST be complete public class Core in package com.solace.mi with a public no-arg
 constructor (implicit is fine) and public byte[] process(byte[] payload, Map<String,Object> headers)
@@ -65,6 +71,8 @@ For routing/fan-out, Core sets headers.put("mi_output_topics", List.of("topic/on
 the runtime sends the returned bytes to every topic. Topics must be concrete, no wildcards,
 at most 16 topics, each up to 250 characters using letters/digits/underscore/dot/dash and slash.
 Do not create publishers in Core.java or add dependencies to implement routing.
+Validate dynamic topic segments using [A-Za-z0-9_.-]+ with the hyphen last. Let the fixed
+runtime validate complete topics. Do not duplicate the runtime's full-topic regex in business code.
 
 The user has confirmed the service/API plan supplied below. Follow that approved plan exactly;
 older rejected choices do not apply. Choose sensible stated defaults and build v1 now.
@@ -81,7 +89,20 @@ Provide useful contract examples derived from the request: at least one valid in
 and an invalid example when validation is required. Examples use input/output UTF-8 strings
 (server encodes them), or input_base64/output_base64 for real binary data. Output strings
 must match actual Java serialization byte for byte. Do not use live credentials in test cases.
+Example headers are broker properties and must be scalar strings, booleans or numbers.
+Place nested metadata such as Salesforce ChangeEventHeader inside the JSON event payload.
 Available optional dependencies: json_schema (networknt 3.0.8), avro (1.12.2), protobuf (4.35.1).
+For inline JSON Schema, declare json_schema and compile the same Draft 2020-12 schema once in each
+runtime. Java: com.networknt.schema.SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12),
+getSchema(schemaText, InputFormat.JSON), then var errors = schema.validate(parsedJsonNode).
+Java validate returns a List of errors. Go: jsonschema.UnmarshalJSON(strings.NewReader(schemaText))
+returns the decoded schema. Pass that value (never the reader) to compiler.AddResource with an
+absolute URL, compile that same URL, and call schema.Validate(decodedPayload).
+Use json.Decoder.UseNumber for Go payloads, reject trailing JSON in both runtimes, and cover
+schema failures and custom business-rule failures separately. Preserve valid input bytes.
+JSON Schema integers can use a decimal/exponent representation. Keep exact numeric semantics
+when checking thresholds: use Java BigDecimal and Go big.Rat.SetString on json.Number text.
+Avoid narrowing unbounded JSON numbers to int, long or float before comparing.
 Standard JDK includes XML/XSD 1.0 and HTTP clients. Avoid libraries outside these dependencies.
 Set explicit HTTP timeouts. For XML disable external DTDs and external schema access, preserve
 the declared encoding by parsing bytes, and use only approved registry-backed references.
@@ -103,10 +124,13 @@ timestamp tolerance, and exposes POST /ingest. It disables broker ingress for th
 project, so signature verification cannot be bypassed through an input topic. Do NOT reimplement
 HMAC in Core.java or require signed/time-dependent contract examples: transport handles auth.
 Core parses the snapshot event JSON, validates id/type/data.object, and routes customer
-transactions. Unless the user specifies mappings, choose two concrete topic patterns:
+transactions. The confirmed event filters, topics, and field validation take precedence over
+every default below. Unless the user specifies mappings, choose two concrete topic patterns:
 stripe/transactions/{event_type} and stripe/customers/{customer_id}/transactions. Keep event type
 dots, e.g. payment_intent.succeeded. Derive customer_id from data.object.customer (a string or
-expanded object's id); use unknown if absent, and state that assumption. Validate topic segments.
+expanded object's id). Use unknown only when the approved plan leaves missing-customer behavior
+unspecified. If the user requires a customer ID, reject absent or invalid values, and exercise
+that rejection in a contract example. Validate topic segments.
 Preserve the raw event bytes and add stripe_event_id and stripe_event_type message properties.
 Include realistic payment_intent.succeeded and payment_intent.payment_failed snapshot examples,
 an invalid event, and exact output_topics on valid examples so tests verify both fan-out routes.
@@ -288,9 +312,19 @@ class AdvisorService:
                 )
             return result
         plan = confirmed
-        sources = research(request, limit=3)
         if not all(service["supported"] for service in plan["services"]):
             return self._result(describe(plan), plan["sources"], None, started)
+        stripe_webhook = any(service["name"] == "Stripe Webhooks" for service in plan["services"])
+        known_core = all(
+            service["name"]
+            in {
+                "Stripe Webhooks",
+                "Java message processor",
+                "Salesforce CDC message processor",
+            }
+            for service in plan["services"]
+        )
+        sources = [] if known_core and plan["sources"] else research(request, limit=3)
         # Carry the reviewed provenance into the artifact, not just newly fetched references.
         for source in plan["sources"][:6]:
             evidence = fetch_reference(
@@ -301,7 +335,6 @@ class AdvisorService:
             )
         system = SYSTEM + "\nFetched source evidence:\n" + json.dumps(sources)
         system += "\nUser-confirmed service/API plan:\n" + json.dumps(plan)
-        stripe_webhook = any(service["name"] == "Stripe Webhooks" for service in plan["services"])
         if stripe_webhook:
             system += "\n" + STRIPE_GUIDE
         if previous_core:
@@ -328,7 +361,7 @@ class AdvisorService:
             if time.monotonic() - started > 120:
                 raise TimeoutError("Build took too long; retry this request")
             # Reserve the final rounds for generation/repair, not more research.
-            build_only = turn >= 2 or stripe_webhook
+            build_only = known_core or turn >= 2
             if build_only:
                 conversation.append(
                     {
@@ -366,6 +399,16 @@ class AdvisorService:
                         result = fetch_reference(str(arguments["url"]))
                         sources.append(result)
                     elif name == "build_v1":
+                        if re.search(
+                            r"(?m)^\s*import\s+(?:static\s+)?"
+                            r"(?:com\.fasterxml\.jackson\.(?:core|databind)\."
+                            r"|tools\.jackson\.core\.JsonProcessingException\b)",
+                            arguments.get("core_java", ""),
+                        ):
+                            raise ValueError(
+                                "Use Jackson 3 tools.jackson.core and tools.jackson.databind "
+                                "imports. Replace JsonProcessingException with JacksonException."
+                            )
                         if arguments.get("go_transport", "amqp") != plan.get("goTransport", "amqp"):
                             raise ValueError("Use the Go transport selected in the approved design")
                         if stripe_webhook and arguments.get("webhook") != "stripe":

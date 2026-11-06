@@ -44,6 +44,8 @@ def assessment(decision="build", **overrides):
             "exactlyOnceOrAtomicity": False,
             "durableStateOrWorkflow": False,
             "unavailableNativeTrigger": False,
+            "stripeThinEvents": False,
+            "externalApiCalls": False,
         },
         **overrides,
     }
@@ -136,6 +138,8 @@ def test_recommendation_stops_before_api_or_generation(monkeypatch, decision, ma
         ("exactlyOnceOrAtomicity", True, "fan-out is not atomic"),
         ("durableStateOrWorkflow", True, "workflow engine"),
         ("unavailableNativeTrigger", True, "actual upstream connector"),
+        ("stripeThinEvents", True, "signed webhook starter handles snapshot events"),
+        ("externalApiCalls", True, "needs an isolated test endpoint"),
     ],
 )
 def test_extracted_requirements_override_an_optimistic_build(requirement, value, explanation):
@@ -189,7 +193,7 @@ def test_unverified_or_malformed_model_advice_fails_closed(bad):
 
 @pytest.mark.parametrize(
     "qualification",
-    [None, {"version": 1, "decision": "reuse"}, {"version": 0, "decision": "build"}],
+    [None, {"version": fit.VERSION, "decision": "reuse"}, {"version": 1, "decision": "build"}],
 )
 def test_yes_with_old_or_blocked_receipt_must_requalify(qualification):
     request = "Subscribe to Salesforce platform events"
@@ -247,6 +251,37 @@ def test_complete_catalog_snapshot_fallback_is_dated_and_direction_specific(monk
     }
     assert all(e["verification"] == "snapshot" for e in result["entries"])
     assert result["sources"] == []
+
+
+def test_verified_schema_release_can_be_reused_outside_the_hub(monkeypatch):
+    def fetch(url, title):
+        if url == fit.SCHEMA_VALIDATOR_README:
+            return {
+                "url": url,
+                "title": title,
+                "status": "fetched",
+                "excerpt": "JSON Schema, XML/XSD, Avro and Protobuf validation. " * 5,
+            }
+        return {"url": url, "status": "unavailable"}
+
+    monkeypatch.setattr(fit, "fetch_reference", fetch)
+    request = "Reuse the Schema Validation MI with Solace Schema Registry"
+    proposal = assessment(
+        "reuse",
+        matches=[
+            {
+                "id": "schema-validation-release",
+                "fit": "covers_request",
+                "explanation": "Published validation MI covers the documented four formats.",
+            }
+        ],
+    )
+    proposal["requirements"]["externalApiCalls"] = True
+    result = fit.SuitabilityService(Architect(proposal)).assess(request)
+    assert result["decision"] == "reuse"
+    assert result["catalog"]["entryCount"] == 111
+    assert "/releases/tag/v1.0.2" in fit.describe_fit(result)
+    assert result["sources"][0]["url"] == fit.SCHEMA_VALIDATOR_README
 
 
 def test_catalog_search_sends_only_technology_names_and_verifies_results(monkeypatch):

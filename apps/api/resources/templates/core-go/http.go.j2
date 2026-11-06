@@ -69,6 +69,7 @@ func jsonReply(w http.ResponseWriter, status int, value any) {
 }
 func (b *brokerTransport) handler() http.Handler {
 	mux := http.NewServeMux()
+	admitted := make(chan struct{}, 128)
 	slots := make(chan struct{}, 64)
 	mux.HandleFunc("/actuator/health", func(w http.ResponseWriter, r *http.Request) {
 		if b.isReady() {
@@ -84,9 +85,20 @@ func (b *brokerTransport) handler() http.Handler {
 			return
 		}
 		select {
-		case slots <- struct{}{}:
-			defer func() { <-slots }()
+		case admitted <- struct{}{}:
+			defer func() { <-admitted }()
 		default:
+			jsonReply(w, 429, map[string]string{"status": "busy"})
+			return
+		}
+		// Absorb short bursts while keeping the number of active request bodies bounded.
+		slotContext, cancelSlotWait := context.WithTimeout(r.Context(), 250*time.Millisecond)
+		select {
+		case slots <- struct{}{}:
+			cancelSlotWait()
+			defer func() { <-slots }()
+		case <-slotContext.Done():
+			cancelSlotWait()
 			jsonReply(w, 429, map[string]string{"status": "busy"})
 			return
 		}

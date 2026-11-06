@@ -74,12 +74,13 @@ class SapAiCoreProvider:
                 inputs.extend(message["_response_output"])
             else:
                 inputs.append({"role": message["role"], "content": message.get("content") or ""})
+        building_core = len(tools) == 1 and tools[0]["function"]["name"] == "build_v1"
         body = {
             "model": model,
             "instructions": "\n".join(instructions),
             "input": inputs,
             "max_output_tokens": 16000,
-            "reasoning": {"effort": "medium"},
+            "reasoning": {"effort": "low" if building_core else "medium"},
             "tools": [{"type": "function", **tool["function"]} for tool in tools],
         }
         if len(tools) == 1:
